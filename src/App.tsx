@@ -72,6 +72,12 @@ function App() {
     },
   }), [darkMode]);
 
+  function isValidIP(ip) {
+    const regex = /^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}$/;
+    return regex.test(ip);
+  }
+
+
   const onBack = () => {
     setShowGraph(false);
   };
@@ -104,14 +110,16 @@ function App() {
 
   const handleDialogClose = () => {
     setDialogOpen(false);
-    if (inputIP) {
+    if (inputIP && isValidIP(inputIP)) {
       setEsp32IP(inputIP);
       setWebSocketAdress(`ws://${inputIP}:8080`);
     } else {
+      toast.error("IP Invalida, se utilizara la IP por default:");
       setEsp32IP(DEFAULT_IP);
       setWebSocketAdress(`ws://${DEFAULT_IP}:8080`);
     }
   };
+
 
   return (
     <ThemeProvider theme={theme}>
@@ -222,7 +230,7 @@ function App() {
           {!showGraph ? (
             <TowerInfo onContinue={handleContinue} />
           ) : (
-            <Graph onBack={onBack} webSocketAdress={webSocketAdress} />
+            <Graph onBack={onBack} webSocketAdress={webSocketAdress} devMode={devMode} />
           )}
         </Box>
       </Container>

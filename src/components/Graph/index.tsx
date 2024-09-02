@@ -178,6 +178,7 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                         fontWeight: 'bold',
                         color: theme.palette.text.primary,
                         marginBottom: 2,
+                        marginTop: '-2rem !important'
                     }}
                 >
                     {devMode && webSocketAdress}
