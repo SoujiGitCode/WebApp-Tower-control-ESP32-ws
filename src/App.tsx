@@ -114,7 +114,7 @@ function App() {
       setEsp32IP(inputIP);
       setWebSocketAdress(`ws://${inputIP}:8080`);
     } else {
-      toast.error(`IP Invalida, se utilizara la IP por default: ${DEFAULT_IP}`);
+      toast.error(`IP Invalida, se utilizara la IP predeterminada: ${DEFAULT_IP}`);
       setEsp32IP(DEFAULT_IP);
       setWebSocketAdress(`ws://${DEFAULT_IP}:8080`);
     }
