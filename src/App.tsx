@@ -85,15 +85,15 @@ function App() {
   useEffect(() => {
     if (devMode) {
       setDialogOpen(true);
-      toast.success(`DevMode Activado`, {
-        position: "top-right",
-        autoClose: 5000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-        progress: undefined,
-      });
+      // toast.success(`DevMode Activado`, {
+      //   position: "top-right",
+      //   autoClose: 5000,
+      //   hideProgressBar: false,
+      //   closeOnClick: true,
+      //   pauseOnHover: true,
+      //   draggable: true,
+      //   progress: undefined,
+      // });
     } else {
       setWebSocketAdress(LOCAL_WEBSOCKET);
       toast.warning(`DevMode Desactivado`, {
@@ -114,10 +114,19 @@ function App() {
       setEsp32IP(inputIP);
       setWebSocketAdress(`ws://${inputIP}:8080`);
     } else {
-      toast.error("IP Invalida, se utilizara la IP por default:");
+      toast.error(`IP Invalida, se utilizara la IP por default: ${DEFAULT_IP}`);
       setEsp32IP(DEFAULT_IP);
       setWebSocketAdress(`ws://${DEFAULT_IP}:8080`);
     }
+    toast.success(`DevMode Activado`, {
+      position: "top-right",
+      autoClose: 5000,
+      hideProgressBar: false,
+      closeOnClick: true,
+      pauseOnHover: true,
+      draggable: true,
+      progress: undefined,
+    });
   };
 
 
@@ -234,9 +243,24 @@ function App() {
           )}
         </Box>
       </Container>
-
-      <Dialog open={dialogOpen} onClose={handleDialogClose}>
-        <DialogTitle>DevMode Activado</DialogTitle>
+      <Dialog
+        open={dialogOpen}
+        onClose={(event, reason) => {
+          if (reason !== 'backdropClick') {
+            handleDialogClose();
+          }
+        }}
+        disableEscapeKeyDown
+        PaperProps={{
+          sx: {
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: 1,
+          },
+        }}
+      >
+        <DialogTitle sx={{ textAlign: 'center' }}>DevMode Activado</DialogTitle>
         <DialogContent>
           <TextField
             label="ESP32 IP Address"
@@ -247,12 +271,14 @@ function App() {
             sx={{ mt: 2 }}
           />
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ justifyContent: 'center' }}>
           <Button onClick={handleDialogClose} color="primary" variant="contained">
             OK
           </Button>
         </DialogActions>
       </Dialog>
+
+
     </ThemeProvider>
   );
 }
