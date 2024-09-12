@@ -68,7 +68,7 @@ const App = () => {
       setTowerInfo(response.data.data);
     } catch (error) {
       console.error('Error al obtener la información de la torre:', error);
-      toast.error('Error al obtener la información de la torre');
+      // toast.error('Error al obtener la información de la torre');
     }
   };
 
@@ -149,7 +149,7 @@ const App = () => {
 
       {showAdminPanel ? (
         // Aquí renderizas el Panel de Administración
-        <AdminPanel />
+        <AdminPanel setShowAdminPanel={setShowAdminPanel} />
       ) : (
         // Aquí renderizas la vista anterior (por ejemplo, la de la torre)
         <>

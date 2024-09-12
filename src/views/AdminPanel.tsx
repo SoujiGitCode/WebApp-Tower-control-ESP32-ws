@@ -7,7 +7,7 @@ import CellsForm from '@components/Tabs/CellsForm';
 import LoginForm from '@components/Auth/LoginForm'; // El componente de login
 import { useAppContext } from '@context/AppContext'; // Importar el contexto
 
-const AdminPanel = () => {
+const AdminPanel = ({ setShowAdminPanel }: { setShowAdminPanel: (show: boolean) => void }) => {
     const { loggedIn, setLoggedIn } = useAppContext(); // Obtener el estado del login desde el contexto
     const [selectedTab, setSelectedTab] = useState(0);
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -40,7 +40,7 @@ const AdminPanel = () => {
                     height: '70vh',
                 }}
             >
-                <LoginForm />
+                <LoginForm setShowAdminPanel={setShowAdminPanel} />
             </Box>
         );
     }

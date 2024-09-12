@@ -5,7 +5,7 @@ import axios from 'axios';
 import { toast } from 'react-toastify';
 import AccessImage from '@assets/access.svg'; // Ruta hacia el SVG
 
-const LoginForm = () => {
+const LoginForm = ({ setShowAdminPanel }: { setShowAdminPanel: (show: boolean) => void }) => {
     const { esp32IP, setLoggedIn } = useAppContext(); // Usar esp32IP desde el context
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
@@ -59,8 +59,12 @@ const LoginForm = () => {
             />
 
             {/* Botón de login */}
-            <Button variant="contained" color="primary" onClick={handleLogin}>
+            <Button variant="contained" color="primary" onClick={handleLogin} sx={{ width: '100%' }}>
                 Login
+            </Button>
+
+            <Button variant="outlined" color="secondary" onClick={() => setShowAdminPanel(false)} sx={{ width: '100%' }}>
+                Volver
             </Button>
 
             {/* Mensaje de error */}
