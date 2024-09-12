@@ -4,7 +4,6 @@ import { Chart, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, 
 import { Box, Button, Typography } from '@mui/material';
 import { toast } from 'react-toastify';
 
-// Registrar los componentes que utilizarás
 Chart.register(CategoryScale, LinearScale, BarElement, BarController, Title, Tooltip, Legend);
 
 const labelMapping: { [key: string]: string } = {
@@ -17,8 +16,11 @@ const labelMapping: { [key: string]: string } = {
 const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = false }) => {
     const chartRef = useRef<HTMLCanvasElement | null>(null);
     const chartInstanceRef = useRef<Chart | null>(null);
-    const theme = useTheme();  // Obtener el tema actual
-    const [outOfBoundsValues, setOutOfBoundsValues] = useState<{ label: string; value: number }[]>([]);
+    const theme = useTheme();
+    const [a1Values, setA1Values] = useState<number[]>([]);
+    const [a2Values, setA2Values] = useState<number[]>([]);
+    const [a3Values, setA3Values] = useState<number[]>([]);
+    const [a4Values, setA4Values] = useState<number[]>([]);
 
     useEffect(() => {
         const ctx = chartRef.current?.getContext('2d');
@@ -62,8 +64,8 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                     plugins: {
                         legend: {
                             labels: {
-                                color: theme.palette.text.primary,       // Para versiones más recientes
-                                usePointStyle: true,  // Si necesitas un estilo de punto en la leyenda
+                                color: theme.palette.text.primary,
+                                usePointStyle: true,
                             },
                         },
                     },
@@ -81,6 +83,8 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
     useEffect(() => {
         const ws = new WebSocket(webSocketAdress);
 
+        let intervalId: NodeJS.Timeout;
+
         ws.onmessage = (event) => {
             try {
                 const newData = JSON.parse(event.data);
@@ -88,7 +92,6 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                 if (chartInstanceRef.current) {
                     const chart = chartInstanceRef.current;
 
-                    // Mapeo de los valores de la sección A con las etiquetas personalizadas
                     const sectionA = Object.entries(newData.sections.a).map(([key, value]) => ({
                         label: labelMapping[key],
                         value: Number(value),
@@ -101,37 +104,48 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                     const yMax = maxAValue * 2;
                     chart.options.scales.y.max = yMax;
 
-                    // Determinar los colores y valores fuera de rango
-                    const newOutOfBoundsValues: { label: string; value: number }[] = [];
-                    const backgroundColors = sectionA.map((entry) => {
-                        if (entry.value > 0.7 * yMax || entry.value < 0.3 * yMax) {
-                            newOutOfBoundsValues.push(entry);
-                            return 'rgba(255, 99, 132, 0.8)'; // Rojo
-                        }
-                        return theme.palette.primary.light; // Usar color del tema
-                    });
-
                     // Actualizar las etiquetas y los datos del gráfico
                     chart.data.labels = sectionA.map((entry) => entry.label);
                     chart.data.datasets[0].data = sectionA.map((entry) => entry.value);
-                    chart.data.datasets[0].backgroundColor = backgroundColors;
                     chart.update();
 
-                    // Almacenar los valores fuera de rango y mostrar notificación
-                    setOutOfBoundsValues(newOutOfBoundsValues);
-                    if (newOutOfBoundsValues.length > 0) {
-                        const messages = newOutOfBoundsValues.map(entry => `${entry.label}: ${entry.value}`).join(', ');
-                        toast.error(`Valores fuera de rango: ${messages}`, {
-                            position: "top-right",
-                            autoClose: 5000,
-                            hideProgressBar: false,
-                            closeOnClick: true,
-                            pauseOnHover: true,
-                            draggable: true,
-                            progress: undefined,
+                    // Cada 20 segundos, agregar un nuevo valor a los arrays correspondientes
+                    intervalId = setInterval(() => {
+                        sectionA.forEach((entry) => {
+                            switch (entry.label) {
+                                case 'celda-1':
+                                    setA1Values(prev => {
+                                        const newValues = [...prev, entry.value].slice(-6);
+                                        if (newValues.length === 6) checkForOutOfBounds(newValues, 'celda-1');
+                                        return newValues;
+                                    });
+                                    break;
+                                case 'celda-2':
+                                    setA2Values(prev => {
+                                        const newValues = [...prev, entry.value].slice(-6);
+                                        if (newValues.length === 6) checkForOutOfBounds(newValues, 'celda-2');
+                                        return newValues;
+                                    });
+                                    break;
+                                case 'celda-3':
+                                    setA3Values(prev => {
+                                        const newValues = [...prev, entry.value].slice(-6);
+                                        if (newValues.length === 6) checkForOutOfBounds(newValues, 'celda-3');
+                                        return newValues;
+                                    });
+                                    break;
+                                case 'celda-4':
+                                    setA4Values(prev => {
+                                        const newValues = [...prev, entry.value].slice(-6);
+                                        if (newValues.length === 6) checkForOutOfBounds(newValues, 'celda-4');
+                                        return newValues;
+                                    });
+                                    break;
+                                default:
+                                    break;
+                            }
                         });
-                        console.log(messages)
-                    }
+                    }, 20000); // 20 segundos
                 }
             } catch (error) {
                 console.error('Error al procesar los datos del WebSocket:', error);
@@ -143,9 +157,46 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
         };
 
         return () => {
+            clearInterval(intervalId);
             ws.close();
         };
     }, [theme, webSocketAdress]);
+
+    const checkForOutOfBounds = (values: number[], label: string) => {
+        const average = values.reduce((sum, val) => sum + val, 0) / values.length;
+        const yMax = Math.max(...values) * 2;
+
+        if (average > 0.7 * yMax || average < 0.3 * yMax) {
+            toast.error(`Valor fuera de rango para ${label}: Promedio = ${average.toFixed(2)}`, {
+                position: "top-right",
+                autoClose: 5000,
+                hideProgressBar: false,
+                closeOnClick: true,
+                pauseOnHover: true,
+                draggable: true,
+                progress: undefined,
+            });
+            console.log(`Valor fuera de rango para ${label}: Promedio = ${average}`);
+        }
+
+        // Limpiar el array después de calcular el promedio
+        switch (label) {
+            case 'celda-1':
+                setA1Values([]);
+                break;
+            case 'celda-2':
+                setA2Values([]);
+                break;
+            case 'celda-3':
+                setA3Values([]);
+                break;
+            case 'celda-4':
+                setA4Values([]);
+                break;
+            default:
+                break;
+        }
+    };
 
     return (
         <Box
@@ -163,7 +214,7 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                 sx={{
                     flexGrow: 1,
                     width: '100%',
-                    maxHeight: 'calc(85vh)',  // Asegura que el gráfico no ocupe más de 100vh menos el espacio para el botón
+                    maxHeight: 'calc(85vh)',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -189,7 +240,6 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                 Volver
             </Button>
         </Box>
-
     );
 };
 

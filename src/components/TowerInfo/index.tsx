@@ -5,7 +5,19 @@ import PowerIcon from '@mui/icons-material/Power';
 import CellTowerIcon from '@mui/icons-material/CellTower';
 import BadgeIcon from '@mui/icons-material/Badge';
 
-const TowerInfo = ({ onContinue }: { onContinue: () => void }) => {
+interface TowerInfoProps {
+    onContinue: () => void;
+    towerInfo: {
+        id: string;
+        location: string;
+        slang: string;
+        type: string;
+        loadcells_amount: number;
+    };
+}
+
+
+const TowerInfo = ({ onContinue, towerInfo }: TowerInfoProps) => {
     return (
         <Box
             sx={{
@@ -17,28 +29,27 @@ const TowerInfo = ({ onContinue }: { onContinue: () => void }) => {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: 1.5,  // Espacio entre elementos
             }}
         >
             <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', marginBottom: '1rem' }}>
                 <BadgeIcon sx={{ mr: 1 }} />
-                <Typography variant="body1"><strong>Identificador:</strong> Torre-1234</Typography>
+                <Typography variant="body1"><strong>Identificador: </strong>{towerInfo?.id}</Typography>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', marginBottom: '1rem' }}>
                 <LocationOnIcon sx={{ mr: 1 }} />
-                <Typography variant="body1"><strong>Ubicación:</strong> Lat: -34.6037, Lon: -58.3816</Typography>
+                <Typography variant="body1"><strong>Ubicación: </strong>{towerInfo?.location}</Typography>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', marginBottom: '1rem' }}>
                 <NumbersIcon sx={{ mr: 1 }} />
-                <Typography variant="body1"><strong>Número:</strong> 12345</Typography>
+                <Typography variant="body1"><strong>Número: </strong>{towerInfo?.slang}</Typography>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', marginBottom: '1rem' }}>
                 <PowerIcon sx={{ mr: 1 }} />
-                <Typography variant="body1"><strong>Tipo:</strong> Alta Tensión</Typography>
+                <Typography variant="body1"><strong>Tipo: </strong>{towerInfo.type}</Typography>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', marginBottom: '1rem' }}>
                 <CellTowerIcon sx={{ mr: 1 }} />
-                <Typography variant="body1"><strong>Cantidad de Celdas:</strong> 4</Typography>
+                <Typography variant="body1"><strong>Cantidad de Celdas: </strong>{towerInfo?.loadcells_amount}</Typography>
             </Box>
             <Button variant="contained" color="primary" onClick={onContinue} sx={{ marginTop: 2, alignSelf: 'center' }}>
                 Continuar
