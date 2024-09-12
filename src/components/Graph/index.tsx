@@ -3,7 +3,7 @@ import { useTheme } from '@mui/material/styles';
 import { Chart, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, BarController } from 'chart.js';
 import { Box, Button, Typography } from '@mui/material';
 import { toast } from 'react-toastify';
-import axios from 'axios';
+// import axios from 'axios';
 import { useAppContext } from '@context/AppContext';
 
 Chart.register(CategoryScale, LinearScale, BarElement, BarController, Title, Tooltip, Legend);

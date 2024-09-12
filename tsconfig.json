@@ -36,6 +36,9 @@
       "@assets/*": [
         "assets/*"
       ], // Ruta personalizada para componentes
+      "@context/*": [
+        "context/*"
+      ], // Ruta personalizada para componentes
     }
   },
   "include": [

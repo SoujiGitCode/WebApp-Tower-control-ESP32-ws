@@ -1,9 +1,9 @@
-import { useEffect, useContext, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createTheme, ThemeProvider, CssBaseline, Switch, FormControlLabel, Typography, Container, Box, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button } from '@mui/material';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
-import Lottie from 'react-lottie-player';
-import lottieJson from './assets/animations/tower.json';
+// import Lottie from 'react-lottie-player';
+// import lottieJson from './assets/animations/tower.json';
 import Graph from '@components/Graph';
 import TowerInfo from '@components/TowerInfo';
 import BugReportIcon from '@mui/icons-material/BugReport';
@@ -13,6 +13,7 @@ import axios from 'axios';
 import { useAppContext } from '@context/AppContext';  // Importar el contexto global
 import 'react-toastify/dist/ReactToastify.css';
 import AdminPanel from '@views/AdminPanel';
+import ReportImage from '@assets/report.svg'; // Ruta hacia el SVG
 
 const App = () => {
   const LOCAL_WEBSOCKET = 'ws://localhost:8080';
@@ -199,7 +200,9 @@ const App = () => {
                 >
                   {devMode && esp32IP}
                 </Typography>
-                <Lottie loop animationData={lottieJson} play style={{ width: 150, height: 150 }} />
+                {/* <Lottie loop animationData={lottieJson} play style={{ width: 150, height: 150 }} /> */}
+                <img src={ReportImage} alt="Access" style={{ width: 150, height: 150 }} />
+
                 <Typography
                   variant="h4"
                   align="center"

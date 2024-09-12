@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Box, TextField, Button, Typography } from '@mui/material';
 import axios from 'axios';
 import { useAppContext } from '@context/AppContext'; // Usar la IP desde el contexto
