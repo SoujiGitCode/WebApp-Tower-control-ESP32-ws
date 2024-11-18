@@ -149,10 +149,10 @@ const App = () => {
       />
 
       {showAdminPanel ? (
-        // Aquí renderizas el Panel de Administración
+        //Panel de Administración
         <AdminPanel setShowAdminPanel={setShowAdminPanel} />
       ) : (
-        // Aquí renderizas la vista anterior (por ejemplo, la de la torre)
+
         <>
           <Box
             sx={{
@@ -200,7 +200,6 @@ const App = () => {
                 >
                   {devMode && esp32IP}
                 </Typography>
-                {/* <Lottie loop animationData={lottieJson} play style={{ width: 150, height: 150 }} /> */}
                 <img src={ReportImage} alt="Access" style={{ width: 150, height: 150 }} />
 
                 <Typography

@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTheme } from '@mui/material/styles';
 import { Chart, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, BarController } from 'chart.js';
-import { Box, Button, Typography } from '@mui/material';
+import { Box, Button, Typography, Modal, TextField, MenuItem } from '@mui/material';
 import { toast } from 'react-toastify';
-// import axios from 'axios';
 import { useAppContext } from '@context/AppContext';
 
 Chart.register(CategoryScale, LinearScale, BarElement, BarController, Title, Tooltip, Legend);
@@ -16,30 +15,92 @@ const labelMapping: { [key: string]: string } = {
 };
 
 const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = false }) => {
+
     const chartRef = useRef<HTMLCanvasElement | null>(null);
     const chartInstanceRef = useRef<Chart | null>(null);
-    const theme = useTheme();  // Obtener el tema actual
-    const { esp32IP } = useAppContext();
+    const theme = useTheme();
+    const { esp32IP } = useAppContext(); // Obtener esp32IP del contexto
 
-    // Variables para los valores
+    // Configuraciones
+    const [interval, setIntervalTime] = useState(15); // Intervalo en segundos
+    const [valueCount, setValueCount] = useState(20); // Cantidad de valores a almacenar
+    const [min, setMin] = useState(3); // Valor mínimo permitido
+    const [max, setMax] = useState(12); // Valor máximo permitido
+    const [chartMax, setChartMax] = useState<number>(17); // Máximo inicial del gráfico (12 + 5)
+    const [ledOn, setLedOn] = useState(false); // Estado del LED
     const [currentValues, setCurrentValues] = useState({ a1: 0, a2: 0, a3: 0, a4: 0 });
-    const [prevValues, setPrevValues] = useState({ a1: 0, a2: 0, a3: 0, a4: 0 });
-    const [ledOn, setLedOn] = useState(false);
+    const [valueHistory, setValueHistory] = useState<{ [key: string]: number[] }>({
+        a1: [],
+        a2: [],
+        a3: [],
+        a4: [],
+    });
 
-    // Mantener el estado del gráfico
+    const [modalOpen, setModalOpen] = useState(false); // Control del modal
+    const [dataFormat, setDataFormat] = useState("Kilogramos");
+    const [tempConfig, setTempConfig] = useState({
+        interval: interval,
+        valueCount: valueCount,
+        min: min,
+        max: max,
+        chartMax: chartMax,
+        dataFormat: dataFormat,
+    });
+
+
+    // Función para manejar los cambios temporales
+    const handleTempChange = (field: string, value: any) => {
+        setTempConfig((prev) => ({ ...prev, [field]: value }));
+    };
+
+
+    // Función para abrir/cerrar el modal
+    const toggleModal = () => {
+        setModalOpen(!modalOpen);
+        if (!modalOpen) {
+            // Al abrir el modal, clonar los valores actuales
+            setTempConfig({
+                interval: interval,
+                valueCount: valueCount,
+                min: min,
+                max: max,
+                chartMax: chartMax,
+                dataFormat: dataFormat,
+            });
+        }
+    };
+
+    // Cancelar cambios (cierra el modal sin guardar)
+    const cancelChanges = () => {
+        toggleModal(); // Simplemente cierra el modal
+    };
+
+    // Guardar cambios definitivos
+    const saveChanges = () => {
+        setIntervalTime(tempConfig.interval);
+        setValueCount(tempConfig.valueCount);
+        setMin(tempConfig.min);
+        setMax(tempConfig.max);
+        setChartMax(tempConfig.chartMax);
+        setDataFormat(tempConfig.dataFormat);
+        toggleModal();
+    };
+
+
+    // Configurar gráfico
     useEffect(() => {
         const ctx = chartRef.current?.getContext('2d');
         if (ctx) {
-            const initialConfig = {
+            chartInstanceRef.current = new Chart(ctx, {
                 type: 'bar',
                 data: {
                     labels: [],
                     datasets: [
                         {
-                            label: 'Newtons',
+                            label: `${dataFormat}`,
                             data: [],
-                            backgroundColor: [],
-                            borderColor: theme.palette.primary.main,
+                            backgroundColor: theme.palette.primary.main,
+                            borderColor: theme.palette.secondary.main,
                             borderWidth: 1,
                         },
                     ],
@@ -49,22 +110,14 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                     scales: {
                         y: {
                             beginAtZero: true,
-                            max: undefined,
-                            grid: {
-                                color: theme.palette.divider,
-                            },
-                            ticks: {
-                                color: theme.palette.text.primary,
-                            },
+                            max: chartMax, // Usar el máximo dinámico configurado
+                            grid: { color: theme.palette.divider },
+                            ticks: { color: theme.palette.text.primary },
                         },
                         x: {
-                            grid: {
-                                color: theme.palette.divider,
-                            },
-                            ticks: {
-                                color: theme.palette.text.primary,
-                            },
-                        }
+                            grid: { color: theme.palette.divider },
+                            ticks: { color: theme.palette.text.primary },
+                        },
                     },
                     plugins: {
                         legend: {
@@ -75,17 +128,15 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                         },
                     },
                 },
-            };
-
-            chartInstanceRef.current = new Chart(ctx, initialConfig);
+            });
         }
-
         return () => {
             chartInstanceRef.current?.destroy();
         };
-    }, [theme]);
+    }, [theme, chartMax, dataFormat]); // Escuchar cambios en chartMax
 
-    // Función para actualizar la gráfica con valores actuales
+
+    // Actualizar valores en el gráfico
     const updateChart = (values: { a1: number; a2: number; a3: number; a4: number }) => {
         if (chartInstanceRef.current) {
             const chart = chartInstanceRef.current;
@@ -94,144 +145,148 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                 value: value || 0,
             }));
 
-            const maxAValue = Math.max(...sectionA.map((entry) => entry.value));
-            const yMax = maxAValue * 2;
-
             chart.data.labels = sectionA.map((entry) => entry.label);
             chart.data.datasets[0].data = sectionA.map((entry) => entry.value);
-            chart.options.scales.y.max = yMax;
             chart.update();
         }
     };
 
-    // Lógica para verificar si los valores están fuera de los límites
-    const checkForOutOfBounds = (prev: { a1: number; a2: number; a3: number; a4: number }, curr: { a1: number; a2: number; a3: number; a4: number }) => {
-        // Calcular el promedio entre el valor anterior y el valor actual
-        const averageValues = {
-            a1: (prev.a1 + curr.a1) / 2,
-            a2: (prev.a2 + curr.a2) / 2,
-            a3: (prev.a3 + curr.a3) / 2,
-            a4: (prev.a4 + curr.a4) / 2,
-        };
+    // Función para actualizar el estado del LED en el backend
+    const updateLedStatus = async (ledStatus) => {
+        try {
+            const formData = new FormData();
+            formData.append('led', ledStatus.toString());
 
-        // Calcular el máximo valor de Y en base a los valores promedios
-        const yMax = Math.max(...Object.values(averageValues)) * 2;
+            const response = await fetch(`http://${esp32IP}/api/led`, {
+                method: 'POST',
+                body: formData,
+            });
 
-        // Función que verifica si un valor está fuera de los límites
-        const isOutOfBounds = (value: number) => value < yMax * 0.3 || value > yMax * 0.7;
-
-        // Crear un array para almacenar los mensajes de las celdas fuera de rango
-        const outOfBoundsMessages: string[] = [];
-
-        // Verificar cada celda y agregar un mensaje si está fuera de los límites
-        if (isOutOfBounds(averageValues.a1)) {
-            outOfBoundsMessages.push(`Celda 1 (a1) fuera de rango: ${averageValues.a1.toFixed(2)}`);
-        }
-        if (isOutOfBounds(averageValues.a2)) {
-            outOfBoundsMessages.push(`Celda 2 (a2) fuera de rango: ${averageValues.a2.toFixed(2)}`);
-        }
-        if (isOutOfBounds(averageValues.a3)) {
-            outOfBoundsMessages.push(`Celda 3 (a3) fuera de rango: ${averageValues.a3.toFixed(2)}`);
-        }
-        if (isOutOfBounds(averageValues.a4)) {
-            outOfBoundsMessages.push(`Celda 4 (a4) fuera de rango: ${averageValues.a4.toFixed(2)}`);
-        }
-
-        // Si hay algún valor fuera de rango, encender el LED y mostrar las alertas
-        if (outOfBoundsMessages.length > 0) {
-            setLedOn(true); // Encender el LED si algún valor está fuera de los límites
-            toast.error(`Valores fuera de rango:\n${outOfBoundsMessages.join('\n')}`);
-            console.log("LED encendido, valores fuera de rango.", outOfBoundsMessages);
-        } else {
-            setLedOn(false); // Apagar el LED si todos los valores están dentro de los límites
-            console.log("LED apagado, valores dentro de rango.");
+            if (response.status === 200) {
+                console.log(`LED status updated successfully to: ${ledStatus}`);
+            } else {
+                console.error('Error al actualizar el estado del LED:', response.statusText);
+            }
+        } catch (error) {
+            console.error('Error en la solicitud para actualizar el estado del LED:', error);
         }
     };
 
+    // Función para verificar valores fuera de rango
+    const checkForOutOfBounds = (history) => {
+        const averageValues = Object.fromEntries(
+            Object.entries(history).map(([key, values]) => [key, values.reduce((sum, val) => sum + val, 0) / values.length])
+        );
 
-    // WebSocket para recibir datos y actualizar currentValues
+        console.log('Promedios calculados:', averageValues);
+
+        const outOfBoundsMessages = [];
+        let ledShouldBeOn = false;
+
+        Object.entries(averageValues).forEach(([key, average]) => {
+            if (average < min) {
+                outOfBoundsMessages.push(`Celda ${key} por debajo del mínimo permitido: ${average.toFixed(2)} < ${min}`);
+                ledShouldBeOn = true;
+            } else if (average > max) {
+                outOfBoundsMessages.push(`Celda ${key} por encima del máximo permitido: ${average.toFixed(2)} > ${max}`);
+                ledShouldBeOn = true;
+            }
+        });
+
+        setLedOn(ledShouldBeOn); // Actualizar estado del LED
+
+        if (ledShouldBeOn) {
+            updateLedStatus(true); // Llamar al backend para encender el LED
+            toast.error(`Valores fuera de rango:\n${outOfBoundsMessages.join('\n')}`);
+            console.log("LED encendido, valores fuera de rango detectados:", outOfBoundsMessages);
+        } else {
+            updateLedStatus(false); // Llamar al backend para apagar el LED
+            console.log("LED apagado, valores dentro del rango permitido.");
+        }
+
+        setValueHistory({
+            a1: [],
+            a2: [],
+            a3: [],
+            a4: [],
+        });
+        console.log('Historial reiniciado después de verificar valores.');
+    };
+
+    // WebSocket para recibir datos
     useEffect(() => {
         const ws = new WebSocket(webSocketAdress);
+
+        let lastUpdate = Date.now();
 
         ws.onmessage = (event) => {
             try {
                 const newData = JSON.parse(event.data);
-
                 const newValues = {
                     a1: Number(newData.sections.a.a1),
                     a2: Number(newData.sections.a.a2),
                     a3: Number(newData.sections.a.a3),
                     a4: Number(newData.sections.a.a4),
                 };
-
-                // Actualizar solo la gráfica (gráfico puede actualizarse cada segundo)
+                // console.log('Datos recibidos del WebSocket:', newValues);
+                // Actualizar el gráfico inmediatamente
                 updateChart(newValues);
+                const now = Date.now();
+                // Guardar en el array solo cada `interval` segundos
+                if (now - lastUpdate >= interval * 1000) {
+                    lastUpdate = now;
+                    setValueHistory((prevHistory) => {
+                        const updatedHistory = { ...prevHistory };
 
-                // Actualizar currentValues, pero no lo usaremos inmediatamente para verificar límites
-                setCurrentValues(newValues);
+                        Object.entries(newValues).forEach(([key, value]) => {
+                            updatedHistory[key] = [...(updatedHistory[key] || []), value].slice(-valueCount);
 
+                            console.log(`Nuevo valor agregado a ${key}: ${value}`);
+                            console.log(`Array actualizado (${key}):`, updatedHistory[key]);
+                        });
+
+                        if (Object.values(updatedHistory).every((arr) => arr.length === valueCount)) {
+                            console.log(`Máxima cantidad de valores alcanzada (${valueCount}). Evaluando...`);
+                            checkForOutOfBounds(updatedHistory);
+                        }
+                        return updatedHistory;
+                    });
+                }
             } catch (error) {
-                console.error('Error al procesar los datos del WebSocket:', error);
+                console.error('Error al procesar datos del WebSocket:', error);
             }
         };
-
-        ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-        };
-
         return () => {
             ws.close();
         };
-    }, [webSocketAdress]);
+    }, [webSocketAdress, interval, valueCount, min, max, chartMax]);
 
-    // Ejecutar verificación cada minuto
-    const lastCheckTime = useRef(Date.now());
-
-    useEffect(() => {
-        const now = Date.now();
-        if (now - lastCheckTime.current >= 60000) { // Si ha pasado un minuto
-            console.log('Checking values after 60 seconds...');
-
-            if (Object.values(prevValues).every(value => value === 0)) {
-                setPrevValues({ ...currentValues });
-                console.log('PrevValues initialized with current values:', currentValues);
-            } else {
-                checkForOutOfBounds(currentValues, prevValues);
-                setPrevValues({ ...currentValues });
-                console.log('Previous values updated:', currentValues);
-            }
-
-            lastCheckTime.current = now; // Actualizar el tiempo de la última verificación
-        }
-    }, [currentValues]);
-
-    useEffect(() => {
-        const updateLedStatus = async () => {
-            try {
-                // Crea el FormData con el valor actual de ledOn
-                const formData = new FormData();
-                formData.append('led', ledOn.toString());  // Aquí ajustamos el valor según `ledOn`
-
-                // Realiza la solicitud POST al endpoint
-                const response = await fetch(`http://${esp32IP}/api/led`, {
-                    method: 'POST',
-                    body: formData,
-                });
-
-                // Puedes hacer algo con la respuesta si es necesario
-                if (response.status === 200) {
-                    console.log('LED status updated successfully:', response?.message);
-                }
-            } catch (error) {
-                console.error('Error updating LED status:', error);
-            }
-        };
-
-        if (ledOn !== undefined) {  // Asegúrate de que `ledOn` tiene un valor definido
-            updateLedStatus();
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        // Permitir borrar con Backspace
+        if (e.key === 'Backspace') {
+            return; // Permitir la acción predeterminada
         }
 
-    }, [ledOn]); // El efecto se ejecutará cada vez que `ledOn` cambie
+        // Permitir solo números
+        if (!e.key.match(/[0-9]/) && e.key.length === 1) {
+            e.preventDefault(); // Bloquear caracteres no numéricos
+        }
+    };
+
+    useEffect(() => {
+        console.log('data format: ', dataFormat)
+    }, [dataFormat])
+
+    useEffect(() => {
+        // Limpiar los arrays al renderizar el componente
+        setValueHistory({
+            a1: [],
+            a2: [],
+            a3: [],
+            a4: [],
+        });
+        console.log('Arrays limpiados al renderizar el componente');
+    }, []);
 
     return (
         <Box
@@ -264,16 +319,118 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                         fontWeight: 'bold',
                         color: theme.palette.text.primary,
                         marginBottom: 2,
-                        marginTop: '-2rem !important'
+                        marginTop: '-2rem !important',
                     }}
                 >
                     {devMode && webSocketAdress}
                 </Typography>
                 <canvas ref={chartRef} style={{ height: '100%', width: '100%' }} />
             </Box>
-            <Button variant="contained" color="primary" sx={{ marginTop: 2 }} onClick={onBack}>
-                Volver
-            </Button>
+            <Box
+                sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    mt: 2,
+                }}
+            >
+                <Button variant="contained" onClick={onBack}>
+                    Volver
+                </Button>
+                <Button variant="outlined" onClick={toggleModal}>
+                    Opciones
+                </Button>
+            </Box>
+            <Modal open={modalOpen} onClose={cancelChanges}>
+                <Box
+                    sx={{
+                        textAlign: "center",
+                        backgroundColor: "background.paper",
+                        padding: 3,
+                        borderRadius: 2,
+                        boxShadow: 24,
+                        maxWidth: { xs: 300, sm: 400 },
+                        maxHeight: "90vh",
+                        margin: "auto",
+                        mt: { xs: 2, sm: 5 },
+                        overflowY: "auto",
+                    }}
+                >
+                    <Typography variant="h6" gutterBottom>
+                        Configuraciones
+                    </Typography>
+                    <TextField
+                        fullWidth
+                        label="Intervalo (segundos)"
+                        type="text"
+                        value={tempConfig.interval}
+                        onChange={(e) => handleTempChange("interval", Number(e.target.value))}
+                        onKeyDown={handleKeyDown}
+                        sx={{ mb: 2 }}
+                    />
+                    <TextField
+                        fullWidth
+                        label="Cantidad de valores"
+                        type="text"
+                        value={tempConfig.valueCount}
+                        onChange={(e) => handleTempChange("valueCount", Number(e.target.value))}
+                        onKeyDown={handleKeyDown}
+                        sx={{ mb: 2 }}
+                    />
+                    <TextField
+                        fullWidth
+                        label="Mínimo permitido"
+                        type="text"
+                        value={tempConfig.min}
+                        onChange={(e) => handleTempChange("min", Number(e.target.value))}
+                        onKeyDown={handleKeyDown}
+                        sx={{ mb: 2 }}
+                    />
+                    <TextField
+                        fullWidth
+                        label="Máximo permitido"
+                        type="text"
+                        value={tempConfig.max}
+                        onChange={(e) => handleTempChange("max", Number(e.target.value))}
+                        onKeyDown={handleKeyDown}
+                        sx={{ mb: 2 }}
+                    />
+                    {/* <TextField
+                        fullWidth
+                        select
+                        label="Seleccione formato de datos"
+                        value={tempConfig.dataFormat}
+                        onChange={(e) => handleTempChange("dataFormat", e.target.value)}
+                        sx={{ mb: 2 }}
+                    >
+                        <MenuItem value="Kilogramos">Kilogramos</MenuItem>
+                        <MenuItem value="Gramos">Gramos</MenuItem>
+                        <MenuItem value="Newtons">Newtons</MenuItem>
+                    </TextField> */}
+                    <TextField
+                        fullWidth
+                        label="Máximo del gráfico"
+                        type="text"
+                        value={tempConfig.chartMax}
+                        onChange={(e) => handleTempChange("chartMax", Number(e.target.value))}
+                        onKeyDown={handleKeyDown}
+                        sx={{ mb: 2 }}
+                    />
+
+                    {/* Botones */}
+                    <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+                        <Button variant="outlined" color="error" onClick={cancelChanges}>
+                            Cerrar
+                        </Button>
+                        <Button variant="contained" color="primary" onClick={saveChanges} sx={{ ml: 2 }}>
+                            Guardar
+                        </Button>
+                    </Box>
+                </Box>
+            </Modal>
+
+
+
         </Box>
     );
 };

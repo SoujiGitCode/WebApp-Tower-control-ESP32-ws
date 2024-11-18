@@ -100,7 +100,7 @@ const CellsForm = () => {
             <Typography variant="h6" align="center" gutterBottom>
                 Configuración de Celdas
             </Typography>
-            <TextField
+            {/* <TextField
                 label="Contraseña de Administrador"
                 variant="outlined"
                 fullWidth
@@ -109,7 +109,7 @@ const CellsForm = () => {
                 onChange={handleChange}
                 type="password"
                 required
-            />
+            /> */}
 
             <PasswordTextField
                 label="Contraseña de Administrador"
