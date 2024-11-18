@@ -20,7 +20,6 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
     const chartInstanceRef = useRef<Chart | null>(null);
     const theme = useTheme();
     const { esp32IP } = useAppContext(); // Obtener esp32IP del contexto
-
     // Configuraciones
     const [interval, setIntervalTime] = useState(15); // Intervalo en segundos
     const [valueCount, setValueCount] = useState(20); // Cantidad de valores a almacenar
@@ -356,8 +355,36 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                         overflowY: "auto",
                     }}
                 >
-                    <Typography variant="h6" gutterBottom>
+                    <Typography
+                        variant="h6"
+                        gutterBottom
+                        sx={{
+                            fontSize: { xs: "1.2rem", sm: "1.5rem" },
+                        }}
+                    >
                         Configuraciones
+                    </Typography>
+
+                    {/* Configuraciones de Intervalo y Cantidad de Valores */}
+                    <Typography
+                        variant="subtitle1"
+                        gutterBottom
+                        sx={{
+                            fontWeight: "bold",
+                            mt: 2,
+                            fontSize: { xs: "1rem", sm: "1.2rem" },
+                        }}
+                    >
+                        Datos de Entrada
+                    </Typography>
+                    <Typography
+                        variant="body2"
+                        sx={{
+                            mb: 2,
+                            fontSize: { xs: "0.85rem", sm: "1rem" },
+                        }}
+                    >
+                        Ajusta el intervalo de actualización y la cantidad de valores que se almacenan.
                     </Typography>
                     <TextField
                         fullWidth
@@ -377,6 +404,28 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                         onKeyDown={handleKeyDown}
                         sx={{ mb: 2 }}
                     />
+
+                    {/* Configuraciones de Límites */}
+                    <Typography
+                        variant="subtitle1"
+                        gutterBottom
+                        sx={{
+                            fontWeight: "bold",
+                            mt: 2,
+                            fontSize: { xs: "1rem", sm: "1.2rem" },
+                        }}
+                    >
+                        Límites Permitidos
+                    </Typography>
+                    <Typography
+                        variant="body2"
+                        sx={{
+                            mb: 2,
+                            fontSize: { xs: "0.85rem", sm: "1rem" },
+                        }}
+                    >
+                        Define los valores mínimos y máximos que se permiten en el gráfico.
+                    </Typography>
                     <TextField
                         fullWidth
                         label="Mínimo permitido"
@@ -395,18 +444,28 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                         onKeyDown={handleKeyDown}
                         sx={{ mb: 2 }}
                     />
-                    {/* <TextField
-                        fullWidth
-                        select
-                        label="Seleccione formato de datos"
-                        value={tempConfig.dataFormat}
-                        onChange={(e) => handleTempChange("dataFormat", e.target.value)}
-                        sx={{ mb: 2 }}
+
+                    {/* Configuración del Máximo del Gráfico */}
+                    <Typography
+                        variant="subtitle1"
+                        gutterBottom
+                        sx={{
+                            fontWeight: "bold",
+                            mt: 2,
+                            fontSize: { xs: "1rem", sm: "1.2rem" },
+                        }}
                     >
-                        <MenuItem value="Kilogramos">Kilogramos</MenuItem>
-                        <MenuItem value="Gramos">Gramos</MenuItem>
-                        <MenuItem value="Newtons">Newtons</MenuItem>
-                    </TextField> */}
+                        Configuración del Gráfico
+                    </Typography>
+                    <Typography
+                        variant="body2"
+                        sx={{
+                            mb: 2,
+                            fontSize: { xs: "0.85rem", sm: "1rem" },
+                        }}
+                    >
+                        Ajusta el valor máximo del eje Y para representar los datos de forma clara.
+                    </Typography>
                     <TextField
                         fullWidth
                         label="Máximo del gráfico"
@@ -419,17 +478,25 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
 
                     {/* Botones */}
                     <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-                        <Button variant="outlined" color="error" onClick={cancelChanges}>
+                        <Button
+                            variant="outlined"
+                            color="error"
+                            onClick={cancelChanges}
+                            sx={{ textAlign: "center", fontSize: { xs: "0.85rem", sm: "1rem" } }}
+                        >
                             Cerrar
                         </Button>
-                        <Button variant="contained" color="primary" onClick={saveChanges} sx={{ ml: 2 }}>
+                        <Button
+                            variant="contained"
+                            color="primary"
+                            onClick={saveChanges}
+                            sx={{ textAlign: "center", fontSize: { xs: "0.85rem", sm: "1rem" }, ml: 2 }}
+                        >
                             Guardar
                         </Button>
                     </Box>
                 </Box>
             </Modal>
-
-
 
         </Box>
     );
