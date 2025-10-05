@@ -18,6 +18,7 @@ import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import { useNavigate } from "react-router-dom";
 import TowerInfoForm from "../components/Tabs/TowerInfoForm";
 import WiFiForm from "../components/Tabs/WiFiForm";
+import UsersForm from "../components/Tabs/UsersForm";
 // import CellsForm from "../components/Tabs/CellsForm";
 import LoginForm from "../components/Auth/LoginForm";
 import { useAppContext } from "../context/AppContext";
@@ -177,6 +178,11 @@ const AdminPanel = () => {
             sx={{ flex: 1, textAlign: "center" }}
             disabled={!isAdmin} // Solo admin puede acceder
           />
+          <Tab
+            label="Usuarios"
+            sx={{ flex: 1, textAlign: "center" }}
+            disabled={!isAdmin} // Solo admin puede acceder
+          />
           {/* <Tab label="Celdas" sx={{ flex: 1, textAlign: "center" }} /> */}
         </Tabs>
 
@@ -197,7 +203,8 @@ const AdminPanel = () => {
         >
           {selectedTab === 0 && <TowerInfoForm />}
           {selectedTab === 1 && <WiFiForm />}
-          {/* {selectedTab === 2 && <CellsForm />} */}
+          {selectedTab === 2 && <UsersForm />}
+          {/* {selectedTab === 3 && <CellsForm />} */}
         </Box>
       </Box>
     </Box>
