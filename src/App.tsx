@@ -16,7 +16,7 @@ import AdminPanel from '@views/AdminPanel';
 import ReportImage from '@assets/report.svg'; // Ruta hacia el SVG
 
 const App = () => {
-  const LOCAL_WEBSOCKET = 'ws://localhost:8080';
+  const LOCAL_WEBSOCKET = 'ws://192.168.4.1:8080';
   const DEFAULT_IP = '192.168.4.1';
 
   const { darkMode, setDarkMode, esp32IP, setEsp32IP, devMode, setDevMode } = useAppContext();  // Usar el contexto global
@@ -198,7 +198,7 @@ const App = () => {
                   gutterBottom
                   sx={{ fontWeight: 'bold', color: theme.palette.text.primary, marginBottom: 2 }}
                 >
-                  {devMode && esp32IP}
+                  {/* {devMode && esp32IP} */}
                 </Typography>
                 <img src={ReportImage} alt="Access" style={{ width: 150, height: 150 }} />
 

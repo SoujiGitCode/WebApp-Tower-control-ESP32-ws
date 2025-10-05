@@ -90,7 +90,7 @@ const TowerInfoForm = () => {
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', justifyContent: 'center', gap: 3 }}>
             <Typography variant="h6" align="center" gutterBottom>
-                Información de la Torre
+                Sistema de Alarma de Tensión de Piolas
             </Typography>
             {/* <TextField
                 label="Contraseña de Administrador"

@@ -14,20 +14,32 @@ const labelMapping: { [key: string]: string } = {
     a4: 'celda-4',
 };
 
-const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = false }) => {
+const Graph = ({ onBack, webSocketAdress = 'ws://192.168.4.1:8080', devMode = false }) => {
 
     const chartRef = useRef<HTMLCanvasElement | null>(null);
     const chartInstanceRef = useRef<Chart | null>(null);
     const theme = useTheme();
-    const { esp32IP } = useAppContext(); // Obtener esp32IP del contexto
     // Configuraciones
-    const [interval, setIntervalTime] = useState(15); // Intervalo en segundos
-    const [valueCount, setValueCount] = useState(20); // Cantidad de valores a almacenar
-    const [min, setMin] = useState(3); // Valor mínimo permitido
-    const [max, setMax] = useState(12); // Valor máximo permitido
-    const [chartMax, setChartMax] = useState<number>(17); // Máximo inicial del gráfico (12 + 5)
+    const {
+        interval,
+        setInterval,
+        valueCount,
+        setValueCount,
+        min,
+        setMin,
+        max,
+        setMax,
+        chartMax,
+        setChartMax,
+        dataFormat,
+        setDataFormat,
+        esp32IP
+    } = useAppContext();
+
+    const chartMaxRef = useRef<number>(0); // Almacena el máximo dinámico actual
     const [ledOn, setLedOn] = useState(false); // Estado del LED
     const [currentValues, setCurrentValues] = useState({ a1: 0, a2: 0, a3: 0, a4: 0 });
+    const [isChartMaxDynamic, setIsChartMaxDynamic] = useState(true);
     const [valueHistory, setValueHistory] = useState<{ [key: string]: number[] }>({
         a1: [],
         a2: [],
@@ -35,8 +47,8 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
         a4: [],
     });
 
+
     const [modalOpen, setModalOpen] = useState(false); // Control del modal
-    const [dataFormat, setDataFormat] = useState("Kilogramos");
     const [tempConfig, setTempConfig] = useState({
         interval: interval,
         valueCount: valueCount,
@@ -57,14 +69,14 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
     const toggleModal = () => {
         setModalOpen(!modalOpen);
         if (!modalOpen) {
-            // Al abrir el modal, clonar los valores actuales
+            // Sincronizar valores del contexto con tempConfig
             setTempConfig({
-                interval: interval,
-                valueCount: valueCount,
-                min: min,
-                max: max,
-                chartMax: chartMax,
-                dataFormat: dataFormat,
+                interval,
+                valueCount,
+                min,
+                max,
+                chartMax,
+                dataFormat,
             });
         }
     };
@@ -74,17 +86,36 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
         toggleModal(); // Simplemente cierra el modal
     };
 
+
     // Guardar cambios definitivos
     const saveChanges = () => {
-        setIntervalTime(tempConfig.interval);
-        setValueCount(tempConfig.valueCount);
-        setMin(tempConfig.min);
-        setMax(tempConfig.max);
-        setChartMax(tempConfig.chartMax);
-        setDataFormat(tempConfig.dataFormat);
+        const { interval, valueCount, min, max, chartMax, dataFormat } = tempConfig;
+
+        // Actualizar valores en el contexto
+        setInterval(interval);
+        setValueCount(valueCount);
+        setMin(min);
+        setMax(max);
+        setChartMax(chartMax > 0 ? chartMax : 0);
+        setDataFormat(dataFormat);
+
+        // Habilitar/deshabilitar modo dinámico basado en chartMax
+        if (chartMax > 0) {
+            setIsChartMaxDynamic(false); // Deshabilitar modo dinámico
+        } else {
+            setIsChartMaxDynamic(true); // Habilitar modo dinámico
+        }
+
+        // Actualizar el gráfico inmediatamente
+        if (chartInstanceRef.current) {
+            const chart = chartInstanceRef.current;
+            chart.options.scales.y.max = chartMax > 0 ? chartMax : chart.options.scales.y.max;
+            chart.update();
+        }
+
+        // Cerrar el modal
         toggleModal();
     };
-
 
     // Configurar gráfico
     useEffect(() => {
@@ -133,6 +164,13 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
             chartInstanceRef.current?.destroy();
         };
     }, [theme, chartMax, dataFormat]); // Escuchar cambios en chartMax
+
+
+    const calculateDynamicMax = (values: number[]) => {
+        const maxValue = Math.max(...values, 0); // Asegurar que no da NaN si los valores están vacíos
+        return Math.ceil(maxValue * 1.3);       // Aumentar en 30% y redondear hacia arriba
+    };
+
 
 
     // Actualizar valores en el gráfico
@@ -200,6 +238,7 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
             console.log("LED encendido, valores fuera de rango detectados:", outOfBoundsMessages);
         } else {
             updateLedStatus(false); // Llamar al backend para apagar el LED
+            toast.success(`Valores estables en todas las celdas`);
             console.log("LED apagado, valores dentro del rango permitido.");
         }
 
@@ -227,10 +266,28 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                     a3: Number(newData.sections.a.a3),
                     a4: Number(newData.sections.a.a4),
                 };
-                // console.log('Datos recibidos del WebSocket:', newValues);
+
                 // Actualizar el gráfico inmediatamente
                 updateChart(newValues);
+
+                // Solo recalcular dinámicamente si el modo dinámico está activo
+                if (isChartMaxDynamic) {
+                    const allValues = Object.values(newValues);
+                    const newDynamicMax = calculateDynamicMax(allValues);
+
+                    if (chartInstanceRef.current) {
+                        const chart = chartInstanceRef.current;
+
+                        // Solo actualizar el máximo si es diferente
+                        if (chartMaxRef.current !== newDynamicMax) {
+                            chartMaxRef.current = newDynamicMax; // Actualizar referencia
+                            chart.options.scales.y.max = newDynamicMax; // Actualizar eje Y dinámicamente
+                            chart.update(); // Aplicar cambios al gráfico
+                        }
+                    }
+                }
                 const now = Date.now();
+
                 // Guardar en el array solo cada `interval` segundos
                 if (now - lastUpdate >= interval * 1000) {
                     lastUpdate = now;
@@ -255,10 +312,12 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                 console.error('Error al procesar datos del WebSocket:', error);
             }
         };
+
         return () => {
             ws.close();
         };
-    }, [webSocketAdress, interval, valueCount, min, max, chartMax]);
+    }, [webSocketAdress, interval, valueCount, min, max, isChartMaxDynamic]);
+
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
         // Permitir borrar con Backspace
@@ -321,7 +380,8 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                         marginTop: '-2rem !important',
                     }}
                 >
-                    {devMode && webSocketAdress}
+                    {/* {devMode && webSocketAdress} */}
+                    Sistema de Alarma de Tensión de Piolas
                 </Typography>
                 <canvas ref={chartRef} style={{ height: '100%', width: '100%' }} />
             </Box>
@@ -359,7 +419,7 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                         variant="h6"
                         gutterBottom
                         sx={{
-                            fontSize: { xs: "1.2rem", sm: "1.5rem" },
+                            fontSize: { xs: "1rem", sm: "1.5rem" },
                         }}
                     >
                         Configuraciones
@@ -372,7 +432,7 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                         sx={{
                             fontWeight: "bold",
                             mt: 2,
-                            fontSize: { xs: "1rem", sm: "1.2rem" },
+                            fontSize: { xs: "0.8rem", sm: "1rem" },
                         }}
                     >
                         Datos de Entrada
@@ -381,7 +441,7 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                         variant="body2"
                         sx={{
                             mb: 2,
-                            fontSize: { xs: "0.85rem", sm: "1rem" },
+                            fontSize: { xs: "0.85rem", sm: "0.8rem" },
                         }}
                     >
                         Ajusta el intervalo de actualización y la cantidad de valores que se almacenan.
@@ -412,7 +472,7 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                         sx={{
                             fontWeight: "bold",
                             mt: 2,
-                            fontSize: { xs: "1rem", sm: "1.2rem" },
+                            fontSize: { xs: "0.8rem", sm: "1rem" },
                         }}
                     >
                         Límites Permitidos
@@ -421,7 +481,7 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                         variant="body2"
                         sx={{
                             mb: 2,
-                            fontSize: { xs: "0.85rem", sm: "1rem" },
+                            fontSize: { xs: "0.85rem", sm: "0.8rem" },
                         }}
                     >
                         Define los valores mínimos y máximos que se permiten en el gráfico.
@@ -452,7 +512,7 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                         sx={{
                             fontWeight: "bold",
                             mt: 2,
-                            fontSize: { xs: "1rem", sm: "1.2rem" },
+                            fontSize: { xs: "0.8rem", sm: "1rem" },
                         }}
                     >
                         Configuración del Gráfico
@@ -461,7 +521,7 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                         variant="body2"
                         sx={{
                             mb: 2,
-                            fontSize: { xs: "0.85rem", sm: "1rem" },
+                            fontSize: { xs: "0.85rem", sm: "0.8rem" },
                         }}
                     >
                         Ajusta el valor máximo del eje Y para representar los datos de forma clara.
@@ -482,7 +542,7 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                             variant="outlined"
                             color="error"
                             onClick={cancelChanges}
-                            sx={{ textAlign: "center", fontSize: { xs: "0.85rem", sm: "1rem" } }}
+                            sx={{ textAlign: "center", fontSize: { xs: "0.85rem", sm: "0.8rem" } }}
                         >
                             Cerrar
                         </Button>
@@ -490,7 +550,7 @@ const Graph = ({ onBack, webSocketAdress = 'ws://localhost:8080', devMode = fals
                             variant="contained"
                             color="primary"
                             onClick={saveChanges}
-                            sx={{ textAlign: "center", fontSize: { xs: "0.85rem", sm: "1rem" }, ml: 2 }}
+                            sx={{ textAlign: "center", fontSize: { xs: "0.85rem", sm: "0.8rem" }, ml: 2 }}
                         >
                             Guardar
                         </Button>

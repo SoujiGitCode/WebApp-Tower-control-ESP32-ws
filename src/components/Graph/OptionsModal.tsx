@@ -55,7 +55,7 @@ const OptionsModal = ({
                 onChange={(e) => setDataFormat(e.target.value)}
                 sx={{ mb: 2 }}
             >
-                <MenuItem value="Kilogramos">Kilogramos</MenuItem>
+                <MenuItem value="Kilogramos">Kilogramos Fuerza</MenuItem>
                 <MenuItem value="Gramos">Gramos</MenuItem>
                 <MenuItem value="Newtons">Newtons</MenuItem>
             </TextField>
