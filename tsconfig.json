@@ -2,11 +2,7 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": [
-      "ES2020",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
     /* Bundler mode */
@@ -24,24 +20,13 @@
     /* Paths para los imports */
     "baseUrl": "./src", // Define la base del proyecto para los paths
     "paths": {
-      "@components/*": [
-        "components/*"
-      ], // Ruta personalizada para componentes
-      "@views/*": [
-        "views/*"
-      ], // Ruta personalizada para vistas
-      "@utils/*": [
-        "utils/*"
-      ],
-      "@assets/*": [
-        "assets/*"
-      ], // Ruta personalizada para componentes
-      "@context/*": [
-        "context/*"
-      ], // Ruta personalizada para componentes
+      "@components/*": ["components/*"], // Ruta personalizada para componentes
+      "@views/*": ["views/*"], // Ruta personalizada para vistas
+      "@utils/*": ["utils/*"],
+      "@assets/*": ["assets/*"], // Ruta personalizada para componentes
+      "@context/*": ["context/*"], // Ruta personalizada para componentes
+      "@api/*": ["api/*"] // Ruta personalizada para API
     }
   },
-  "include": [
-    "src"
-  ]
+  "include": ["src"]
 }

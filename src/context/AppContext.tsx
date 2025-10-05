@@ -1,77 +1,169 @@
-import { createContext, useState, useContext, ReactNode } from 'react';
+import {
+  createContext,
+  useState,
+  useContext,
+  ReactNode,
+  useEffect,
+} from "react";
+import { auth, api, AuthUser, UserRole } from "../api/index";
+import { mockAuth, mockApi } from "../api/mockApi";
 
 interface AppContextProps {
-    loggedIn: boolean;
-    setLoggedIn: (value: boolean) => void;
-    esp32IP: string;
-    setEsp32IP: (value: string) => void;
-    darkMode: boolean;
-    setDarkMode: (value: boolean) => void;
-    devMode: boolean;
-    setDevMode: (value: boolean) => void;
-    // Variables del formulario
-    interval: number;
-    setInterval: (value: number) => void;
-    valueCount: number;
-    setValueCount: (value: number) => void;
-    min: number;
-    setMin: (value: number) => void;
-    max: number;
-    setMax: (value: number) => void;
-    chartMax: number;
-    setChartMax: (value: number) => void;
-    dataFormat: string;
-    setDataFormat: (value: string) => void;
+  // Estados de autenticación
+  loggedIn: boolean;
+  setLoggedIn: (value: boolean) => void;
+  currentUser: AuthUser | null;
+  setCurrentUser: (user: AuthUser | null) => void;
+  isAdmin: boolean;
+  isUser: boolean;
+
+  // Funciones de autenticación
+  login: (username: string, password: string) => Promise<boolean>;
+  logout: () => void;
+
+  // API actual (real o mock según devMode)
+  currentApi: typeof api;
+
+  // Estados existentes
+  esp32IP: string;
+  setEsp32IP: (value: string) => void;
+  darkMode: boolean;
+  setDarkMode: (value: boolean) => void;
+  devMode: boolean;
+  setDevMode: (value: boolean) => void;
+
+  // Variables del formulario
+  interval: number;
+  setInterval: (value: number) => void;
+  valueCount: number;
+  setValueCount: (value: number) => void;
+  min: number;
+  setMin: (value: number) => void;
+  max: number;
+  setMax: (value: number) => void;
+  chartMax: number;
+  setChartMax: (value: number) => void;
+  dataFormat: string;
+  setDataFormat: (value: string) => void;
 }
 
 const AppContext = createContext<AppContextProps | undefined>(undefined);
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
-    const [loggedIn, setLoggedIn] = useState(false);
-    const [esp32IP, setEsp32IP] = useState('192.168.4.1');
-    const [darkMode, setDarkMode] = useState(true);
-    const [devMode, setDevMode] = useState(false);
+  // Estados de autenticación
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
 
-    // Variables del formulario
-    const [interval, setInterval] = useState(10);
-    const [valueCount, setValueCount] = useState(10);
-    const [min, setMin] = useState(7);
-    const [max, setMax] = useState(70);
-    const [chartMax, setChartMax] = useState(0);
-    const [dataFormat, setDataFormat] = useState('Kilogramos Fuerza');
+  // Estados existentes
+  const [esp32IP, setEsp32IP] = useState("192.168.4.1");
+  const [darkMode, setDarkMode] = useState(true);
+  const [devMode, setDevMode] = useState(true); // Por defecto en true para desarrollo
 
-    return (
-        <AppContext.Provider
-            value={{
-                loggedIn,
-                setLoggedIn,
-                esp32IP,
-                setEsp32IP,
-                darkMode,
-                setDarkMode,
-                devMode,
-                setDevMode,
-                interval,
-                setInterval,
-                valueCount,
-                setValueCount,
-                min,
-                setMin,
-                max,
-                setMax,
-                chartMax,
-                setChartMax,
-                dataFormat,
-                setDataFormat,
-            }}
-        >
-            {children}
-        </AppContext.Provider>
-    );
+  // Variables del formulario
+  const [interval, setInterval] = useState(10);
+  const [valueCount, setValueCount] = useState(10);
+  const [min, setMin] = useState(7);
+  const [max, setMax] = useState(70);
+  const [chartMax, setChartMax] = useState(0);
+  const [dataFormat, setDataFormat] = useState("Kilogramos Fuerza");
+
+  // Computed values para roles
+  const isAdmin = currentUser?.role === "ADMIN";
+  const isUser = currentUser?.role === "USER";
+
+  // Seleccionar API según el modo
+  const currentAuth = devMode ? mockAuth : auth;
+  const currentApi = devMode ? mockApi : api;
+
+  // Función de login
+  const login = async (
+    username: string,
+    password: string
+  ): Promise<boolean> => {
+    try {
+      const response = await currentAuth.login(username, password);
+      if (response.status === "success") {
+        setLoggedIn(true);
+        setCurrentUser(currentAuth.getCurrentUser());
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Error en login:", error);
+      return false;
+    }
+  };
+
+  // Función de logout
+  const logout = () => {
+    currentAuth.logout();
+    setLoggedIn(false);
+    setCurrentUser(null);
+  };
+
+  // Verificar sesión al cargar la aplicación
+  useEffect(() => {
+    const currentAuthService = devMode ? mockAuth : auth;
+    const isUserLoggedIn = currentAuthService.isLoggedIn();
+    const user = currentAuthService.getCurrentUser();
+
+    if (isUserLoggedIn && user) {
+      setLoggedIn(true);
+      setCurrentUser(user);
+    }
+  }, [devMode]); // Dependencia de devMode para re-evaluar cuando cambie
+
+  // Actualizar IP base de la API cuando cambie esp32IP
+  useEffect(() => {
+    const currentApiService = devMode ? mockApi : api;
+    currentApiService.updateBaseURL(esp32IP);
+  }, [esp32IP, devMode]);
+
+  return (
+    <AppContext.Provider
+      value={{
+        // Estados de autenticación
+        loggedIn,
+        setLoggedIn,
+        currentUser,
+        setCurrentUser,
+        isAdmin,
+        isUser,
+        login,
+        logout,
+
+        // API actual
+        currentApi,
+
+        // Estados existentes
+        esp32IP,
+        setEsp32IP,
+        darkMode,
+        setDarkMode,
+        devMode,
+        setDevMode,
+        interval,
+        setInterval,
+        valueCount,
+        setValueCount,
+        min,
+        setMin,
+        max,
+        setMax,
+        chartMax,
+        setChartMax,
+        dataFormat,
+        setDataFormat,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
 };
 
 export const useAppContext = () => {
-    const context = useContext(AppContext);
-    if (!context) throw new Error('useAppContext must be used within an AppProvider');
-    return context;
+  const context = useContext(AppContext);
+  if (!context)
+    throw new Error("useAppContext must be used within an AppProvider");
+  return context;
 };
