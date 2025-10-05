@@ -16,12 +16,14 @@ import {
   Brightness4 as DarkIcon,
   BugReport as DevIcon,
   Code as CodeIcon,
+  Settings as SettingsIcon,
+  Wifi as WifiIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { useAppContext } from "../context/AppContext";
 import { toast } from "react-toastify";
 import AccessImage from "../assets/access.svg";
-import { MOCK_CREDENTIALS } from "../api/mockApi";
+import { MOCK_CREDENTIALS, mockApiClient } from "../api/mockApi";
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -31,6 +33,8 @@ const LoginPage = () => {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showIpConfig, setShowIpConfig] = useState(false);
+  const [espIP, setEspIP] = useState("192.168.4.1");
 
   // Si ya está logueado, redirigir
   useEffect(() => {
@@ -96,47 +100,11 @@ const LoginPage = () => {
         alignItems: "center",
         justifyContent: "center",
         background: darkMode
-          ? "linear-gradient(135deg, #1a1a1a 0%, #2d3748 100%)"
-          : "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+          ? "linear-gradient(135deg, #1e293b 0%, #334155 30%, #475569 70%, #64748b 100%)"
+          : "linear-gradient(135deg, #667eea 0%, #764ba2 50%, #5b73c4 100%)",
         p: 2,
       }}
     >
-      {/* Controles de tema y dev mode */}
-      <Box
-        sx={{
-          position: "fixed",
-          top: 16,
-          left: 16,
-          display: "flex",
-          flexDirection: "column",
-          gap: 1,
-          zIndex: 1000,
-        }}
-      >
-        <FormControlLabel
-          control={
-            <Switch
-              checked={darkMode}
-              onChange={() => setDarkMode(!darkMode)}
-              icon={<LightIcon />}
-              checkedIcon={<DarkIcon />}
-            />
-          }
-          label=""
-        />
-        <FormControlLabel
-          control={
-            <Switch
-              checked={devMode}
-              onChange={() => setDevMode(!devMode)}
-              icon={<CodeIcon />}
-              checkedIcon={<DevIcon />}
-            />
-          }
-          label=""
-        />
-      </Box>
-
       <Container maxWidth="sm">
         <Paper
           elevation={12}
@@ -171,10 +139,208 @@ const LoginPage = () => {
               >
                 Sistema de Monitoreo
               </Typography>
-              <Typography variant="h6" color="text.secondary">
+              <Typography variant="h6" color="text.secondary" sx={{ mb: 2 }}>
                 Torres de Control ESP32
               </Typography>
+
+              {/* Controles de tema y dev mode integrados */}
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "center",
+                  gap: 1.5,
+                  mt: 1,
+                }}
+              >
+                {/* Toggle Dark Mode */}
+                <Box
+                  onClick={() => setDarkMode(!darkMode)}
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: darkMode
+                      ? "rgba(96, 165, 250, 0.1)"
+                      : "rgba(251, 191, 36, 0.1)",
+                    border: darkMode
+                      ? "2px solid rgba(96, 165, 250, 0.3)"
+                      : "2px solid rgba(251, 191, 36, 0.3)",
+                    cursor: "pointer",
+                    transition: "all 0.3s ease",
+                    "&:hover": {
+                      backgroundColor: darkMode
+                        ? "rgba(96, 165, 250, 0.2)"
+                        : "rgba(251, 191, 36, 0.2)",
+                      transform: "scale(1.1)",
+                      boxShadow: darkMode
+                        ? "0 4px 12px rgba(96, 165, 250, 0.3)"
+                        : "0 4px 12px rgba(251, 191, 36, 0.3)",
+                    },
+                  }}
+                >
+                  {darkMode ? (
+                    <DarkIcon sx={{ fontSize: 16, color: "#60a5fa" }} />
+                  ) : (
+                    <LightIcon sx={{ fontSize: 16, color: "#fbbf24" }} />
+                  )}
+                </Box>
+
+                {/* Toggle Dev Mode */}
+                <Box
+                  onClick={() => setDevMode(!devMode)}
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: devMode
+                      ? "rgba(245, 158, 11, 0.1)"
+                      : "rgba(156, 163, 175, 0.1)",
+                    border: devMode
+                      ? "2px solid rgba(245, 158, 11, 0.3)"
+                      : "2px solid rgba(156, 163, 175, 0.3)",
+                    cursor: "pointer",
+                    transition: "all 0.3s ease",
+                    "&:hover": {
+                      backgroundColor: devMode
+                        ? "rgba(245, 158, 11, 0.2)"
+                        : "rgba(156, 163, 175, 0.2)",
+                      transform: "scale(1.1)",
+                      boxShadow: devMode
+                        ? "0 4px 12px rgba(245, 158, 11, 0.3)"
+                        : "0 4px 12px rgba(156, 163, 175, 0.3)",
+                    },
+                  }}
+                >
+                  {devMode ? (
+                    <DevIcon sx={{ fontSize: 16, color: "#f59e0b" }} />
+                  ) : (
+                    <CodeIcon sx={{ fontSize: 16, color: "#9ca3af" }} />
+                  )}
+                </Box>
+
+                {/* Toggle IP Config */}
+                <Box
+                  onClick={() => setShowIpConfig(!showIpConfig)}
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: showIpConfig
+                      ? "rgba(34, 197, 94, 0.1)"
+                      : "rgba(156, 163, 175, 0.1)",
+                    border: showIpConfig
+                      ? "2px solid rgba(34, 197, 94, 0.3)"
+                      : "2px solid rgba(156, 163, 175, 0.3)",
+                    cursor: "pointer",
+                    transition: "all 0.3s ease",
+                    "&:hover": {
+                      backgroundColor: showIpConfig
+                        ? "rgba(34, 197, 94, 0.2)"
+                        : "rgba(156, 163, 175, 0.2)",
+                      transform: "scale(1.1)",
+                      boxShadow: showIpConfig
+                        ? "0 4px 12px rgba(34, 197, 94, 0.3)"
+                        : "0 4px 12px rgba(156, 163, 175, 0.3)",
+                    },
+                  }}
+                >
+                  {showIpConfig ? (
+                    <WifiIcon sx={{ fontSize: 16, color: "#22c55e" }} />
+                  ) : (
+                    <SettingsIcon sx={{ fontSize: 16, color: "#9ca3af" }} />
+                  )}
+                </Box>
+              </Box>
             </Box>
+
+            {/* Panel de configuración de IP */}
+            {showIpConfig && (
+              <Box
+                sx={{
+                  width: "100%",
+                  p: 2,
+                  borderRadius: 2,
+                  backgroundColor: darkMode
+                    ? "rgba(34, 197, 94, 0.1)"
+                    : "rgba(34, 197, 94, 0.05)",
+                  border: darkMode
+                    ? "1px solid rgba(34, 197, 94, 0.3)"
+                    : "1px solid rgba(34, 197, 94, 0.2)",
+                  mt: 2,
+                }}
+              >
+                <Typography
+                  variant="subtitle2"
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    mb: 1.5,
+                    color: "#22c55e",
+                    fontWeight: 600,
+                  }}
+                >
+                  <WifiIcon sx={{ fontSize: 18 }} />
+                  Configuración ESP32
+                </Typography>
+                <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                  <TextField
+                    size="small"
+                    label="IP del ESP32"
+                    value={espIP}
+                    onChange={(e) => setEspIP(e.target.value)}
+                    placeholder="192.168.4.1"
+                    sx={{ flex: 1 }}
+                    InputProps={{
+                      sx: {
+                        fontSize: "0.875rem",
+                      },
+                    }}
+                  />
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={() => {
+                      mockApiClient.updateBaseURL(espIP);
+                      toast.success(`IP actualizada a: ${espIP}`, {
+                        position: "top-right",
+                        autoClose: 2000,
+                      });
+                    }}
+                    sx={{
+                      backgroundColor: "#22c55e",
+                      "&:hover": {
+                        backgroundColor: "#16a34a",
+                      },
+                      fontSize: "0.75rem",
+                      px: 2,
+                    }}
+                  >
+                    Aplicar
+                  </Button>
+                </Box>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    display: "block",
+                    mt: 1,
+                    color: "text.secondary",
+                    fontStyle: "italic",
+                  }}
+                >
+                  💡 Cambia la IP para conectar a tu ESP32 en desarrollo
+                </Typography>
+              </Box>
+            )}
 
             {/* Formulario de login */}
             <Box sx={{ width: "100%", mt: 2 }}>

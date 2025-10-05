@@ -49,52 +49,53 @@ Chart.register(
   Legend
 );
 
-// ===== COMPONENTE: VISTA DE TORRE DESDE ARRIBA =====
-const TowerView = ({
-  device,
-  darkMode,
-}: {
+interface TowerViewProps {
   device: Device;
   darkMode: boolean;
-}) => {
-  const THRESHOLD_WARNING = 1500;
-  const THRESHOLD_CRITICAL = 2000;
-  const THRESHOLD_MIN = 100;
+}
 
+const TowerView = ({ device, darkMode }: TowerViewProps) => {
   const getCableColor = (force: number) => {
-    if (force <= THRESHOLD_MIN) return "#ff9800";
-    if (force >= THRESHOLD_CRITICAL) return "#f44336";
-    if (force >= THRESHOLD_WARNING) return "#ff9800";
-    return "#4caf50";
+    if (force < 1500) return "#22c55e"; // Verde - Normal
+    if (force < 2000) return "#f59e0b"; // Naranja - Alerta
+    return "#ef4444"; // Rojo - Crítico
   };
 
-  const maxValue = Math.max(
+  const calculateSize = (force: number) => {
+    const minSize = 40;
+    const maxSize = 80;
+    const normalizedForce = Math.min(force / 3000, 1);
+    return minSize + (maxSize - minSize) * normalizedForce;
+  };
+
+  const maxForce = Math.max(
     device.Norte,
     device.Sur,
     device.Este,
-    device.Oeste,
-    2500
+    device.Oeste
   );
-
-  const calculateSize = (force: number) => {
-    return Math.max(30, (force / maxValue) * 120);
-  };
 
   return (
     <Box
       sx={{
         position: "relative",
         width: "100%",
-        height: 400,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        height: 300,
+        bgcolor: darkMode ? "rgba(0,0,0,0.2)" : "rgba(0,0,0,0.02)",
+        borderRadius: 2,
+        overflow: "hidden",
+        border: darkMode
+          ? "1px solid rgba(255,255,255,0.1)"
+          : "1px solid rgba(0,0,0,0.05)",
       }}
     >
-      {/* Centro de la torre */}
+      {/* Torre Central */}
       <Box
         sx={{
           position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
           width: 60,
           height: 60,
           borderRadius: "50%",
@@ -256,302 +257,125 @@ const TowerView = ({
           OESTE
         </Typography>
       </Box>
-
-      {/* Líneas conectoras */}
-      <svg
-        style={{
-          position: "absolute",
-          width: "100%",
-          height: "100%",
-          pointerEvents: "none",
-          zIndex: 1,
-        }}
-      >
-        <line
-          x1="50%"
-          y1="50%"
-          x2="50%"
-          y2="20"
-          stroke={darkMode ? "#555" : "#ccc"}
-          strokeWidth="2"
-          strokeDasharray="5,5"
-        />
-        <line
-          x1="50%"
-          y1="50%"
-          x2="50%"
-          y2="380"
-          stroke={darkMode ? "#555" : "#ccc"}
-          strokeWidth="2"
-          strokeDasharray="5,5"
-        />
-        <line
-          x1="50%"
-          y1="50%"
-          x2="20"
-          y2="50%"
-          stroke={darkMode ? "#555" : "#ccc"}
-          strokeWidth="2"
-          strokeDasharray="5,5"
-        />
-        <line
-          x1="50%"
-          y1="50%"
-          x2="calc(100% - 20)"
-          y2="50%"
-          stroke={darkMode ? "#555" : "#ccc"}
-          strokeWidth="2"
-          strokeDasharray="5,5"
-        />
-      </svg>
     </Box>
   );
 };
 
-// ===== COMPONENTE PRINCIPAL =====
 const RealTimeData = () => {
+  const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
-  const { deviceId: deviceIdParam } = useParams<{ deviceId: string }>();
-  const deviceId = deviceIdParam ? parseInt(deviceIdParam, 10) : 0;
-
-  // Validar ID del device
-  if (!deviceIdParam || isNaN(deviceId) || deviceId <= 0) {
-    toast.error("ID de device inválido", {
-      position: "top-right",
-      autoClose: 2000,
-    });
-    navigate("/dashboard");
-    return null;
-  }
-
-  const { currentUser, currentApi, devMode, esp32IP, darkMode } =
-    useAppContext();
-  const chartRef = useRef<HTMLCanvasElement | null>(null);
-  const chartInstanceRef = useRef<Chart | null>(null);
-
-  const [currentDevice, setCurrentDevice] = useState<Device | null>(null);
+  const { darkMode, currentApi, devMode, esp32IP } = useAppContext();
+  const [devicesData, setDevicesData] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const chartRef = useRef<HTMLCanvasElement>(null);
+  const chartInstanceRef = useRef<Chart | null>(null);
+  const [wsConnection, setWsConnection] = useState<any>(null);
 
-  // Historial de datos para el gráfico (últimos 60 segundos)
-  const [dataHistory, setDataHistory] = useState<{
-    timestamps: string[];
+  // Estado para mantener historial de datos para el gráfico
+  const [historicalData, setHistoricalData] = useState<{
+    labels: string[];
     Norte: number[];
     Sur: number[];
     Este: number[];
     Oeste: number[];
   }>({
-    timestamps: [],
+    labels: [],
     Norte: [],
     Sur: [],
     Este: [],
     Oeste: [],
   });
 
-  // Umbrales de alerta
-  const THRESHOLD_WARNING = 1500;
-  const THRESHOLD_CRITICAL = 2000;
-  const THRESHOLD_MIN = 100;
+  const maxHistoryPoints = 20; // Mantener últimos 20 puntos de datos
 
-  // Función para verificar alertas
-  const checkAlerts = (device: Device) => {
-    const cables = [
-      { name: "Norte", value: device.Norte },
-      { name: "Sur", value: device.Sur },
-      { name: "Este", value: device.Este },
-      { name: "Oeste", value: device.Oeste },
-    ];
+  const currentDevice = devicesData.find(
+    (device) => device.id === Number(deviceId)
+  );
 
-    cables.forEach((cable) => {
-      if (cable.value >= THRESHOLD_CRITICAL) {
-        toast.error(`⚠️ CRÍTICO: Cable ${cable.name} con ${cable.value}N`, {
-          position: "top-right",
-          autoClose: 5000,
-        });
-      } else if (cable.value <= THRESHOLD_MIN) {
-        toast.warning(`⚠️ Cable ${cable.name} muy flojo: ${cable.value}N`, {
-          position: "top-right",
-          autoClose: 5000,
-        });
+  const getCableColor = (force: number) => {
+    if (force < 1500) return "#22c55e"; // Verde - Normal
+    if (force < 2000) return "#f59e0b"; // Naranja - Alerta
+    return "#ef4444"; // Rojo - Crítico
+  };
+
+  // Función para actualizar el historial de datos
+  const updateHistoricalData = (device: Device) => {
+    const now = new Date();
+    const timeLabel = now.toLocaleTimeString("es-ES", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
+    setHistoricalData((prev) => {
+      const newLabels = [...prev.labels, timeLabel];
+      const newNorte = [...prev.Norte, device.Norte];
+      const newSur = [...prev.Sur, device.Sur];
+      const newEste = [...prev.Este, device.Este];
+      const newOeste = [...prev.Oeste, device.Oeste];
+
+      // Mantener solo los últimos maxHistoryPoints
+      if (newLabels.length > maxHistoryPoints) {
+        return {
+          labels: newLabels.slice(-maxHistoryPoints),
+          Norte: newNorte.slice(-maxHistoryPoints),
+          Sur: newSur.slice(-maxHistoryPoints),
+          Este: newEste.slice(-maxHistoryPoints),
+          Oeste: newOeste.slice(-maxHistoryPoints),
+        };
       }
+
+      return {
+        labels: newLabels,
+        Norte: newNorte,
+        Sur: newSur,
+        Este: newEste,
+        Oeste: newOeste,
+      };
     });
   };
 
-  // Configurar gráfico de líneas
-  useEffect(() => {
-    if (!chartRef.current) return;
-
-    const ctx = chartRef.current.getContext("2d");
-    if (!ctx) return;
-
-    // Destruir gráfico anterior si existe
-    if (chartInstanceRef.current) {
-      chartInstanceRef.current.destroy();
+  const getForceStatus = (force: number) => {
+    if (force < 1500) {
+      return { label: "Normal", color: "success" as const };
+    } else if (force < 2000) {
+      return { label: "Alerta", color: "warning" as const };
+    } else {
+      return { label: "Crítico", color: "error" as const };
     }
+  };
 
-    chartInstanceRef.current = new Chart(ctx, {
-      type: "line",
-      data: {
-        labels: dataHistory.timestamps,
-        datasets: [
-          {
-            label: "Norte",
-            data: dataHistory.Norte,
-            borderColor: "rgba(54, 162, 235, 1)",
-            backgroundColor: "rgba(54, 162, 235, 0.1)",
-            tension: 0.4,
-            fill: false,
-            pointRadius: 2,
-          },
-          {
-            label: "Sur",
-            data: dataHistory.Sur,
-            borderColor: "rgba(255, 99, 132, 1)",
-            backgroundColor: "rgba(255, 99, 132, 0.1)",
-            tension: 0.4,
-            fill: false,
-            pointRadius: 2,
-          },
-          {
-            label: "Este",
-            data: dataHistory.Este,
-            borderColor: "rgba(75, 192, 192, 1)",
-            backgroundColor: "rgba(75, 192, 192, 0.1)",
-            tension: 0.4,
-            fill: false,
-            pointRadius: 2,
-          },
-          {
-            label: "Oeste",
-            data: dataHistory.Oeste,
-            borderColor: "rgba(255, 206, 86, 1)",
-            backgroundColor: "rgba(255, 206, 86, 0.1)",
-            tension: 0.4,
-            fill: false,
-            pointRadius: 2,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: {
-          mode: "index",
-          intersect: false,
-        },
-        plugins: {
-          title: {
-            display: true,
-            text: "Histórico de Tensión (últimos 60 segundos)",
-            color: darkMode ? "#ffffff" : "#000000",
-            font: { size: 14 },
-          },
-          legend: {
-            position: "top",
-            labels: {
-              color: darkMode ? "#ffffff" : "#000000",
-              usePointStyle: true,
-            },
-          },
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-            title: {
-              display: true,
-              text: "Tensión (N)",
-              color: darkMode ? "#ffffff" : "#000000",
-            },
-            ticks: {
-              color: darkMode ? "#ffffff" : "#000000",
-            },
-            grid: {
-              color: darkMode
-                ? "rgba(255, 255, 255, 0.1)"
-                : "rgba(0, 0, 0, 0.1)",
-            },
-          },
-          x: {
-            ticks: {
-              color: darkMode ? "#ffffff" : "#000000",
-              maxRotation: 45,
-              minRotation: 45,
-            },
-            grid: {
-              color: darkMode
-                ? "rgba(255, 255, 255, 0.1)"
-                : "rgba(0, 0, 0, 0.1)",
-            },
-          },
-        },
-        animation: {
-          duration: 0,
-        },
-      },
-    });
-
-    return () => {
-      if (chartInstanceRef.current) {
-        chartInstanceRef.current.destroy();
-      }
-    };
-  }, [dataHistory, darkMode]);
-
-  // Conectar WebSocket
+  // Conectar WebSocket para obtener datos en tiempo real
   useEffect(() => {
-    let ws: WebSocket | null = null;
+    let ws: any = null;
 
     const connectWebSocket = () => {
       try {
         setLoading(true);
         setError(null);
 
+        // Usar la IP configurada en devMode o la IP por defecto
         ws = currentApi.createWebSocketConnection(
           devMode ? esp32IP : undefined
         );
 
         ws.onopen = () => {
-          console.log(
-            `🔌 RealTimeData WebSocket conectado para device #${deviceId}`
-          );
+          console.log("🔌 RealTimeData WebSocket conectado");
           setLoading(false);
         };
 
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data) as DevicesData;
-            const device = data.devices.find((d) => d.id === deviceId);
+            setDevicesData(data.devices);
 
-            if (device) {
-              setCurrentDevice(device);
-              setLastUpdate(new Date());
-
-              // Actualizar historial (mantener solo los últimos 60 puntos = 1 minuto)
-              setDataHistory((prev) => {
-                const timestamp = new Date().toLocaleTimeString();
-                const newHistory = {
-                  timestamps: [...prev.timestamps, timestamp].slice(-60),
-                  Norte: [...prev.Norte, device.Norte].slice(-60),
-                  Sur: [...prev.Sur, device.Sur].slice(-60),
-                  Este: [...prev.Este, device.Este].slice(-60),
-                  Oeste: [...prev.Oeste, device.Oeste].slice(-60),
-                };
-                return newHistory;
-              });
-
-              // Verificar alertas
-              checkAlerts(device);
-            } else {
-              setError(`Device #${deviceId} no encontrado en los datos`);
-              toast.error(`Device #${deviceId} no encontrado`, {
-                position: "top-right",
-                autoClose: 3000,
-              });
-              setTimeout(() => {
-                navigate("/dashboard");
-              }, 3000);
+            // Actualizar historial para el dispositivo actual
+            const currentDeviceData = data.devices.find(
+              (device) => device.id === Number(deviceId)
+            );
+            if (currentDeviceData) {
+              updateHistoricalData(currentDeviceData);
             }
           } catch (err) {
             console.error("Error parseando datos WebSocket:", err);
@@ -565,14 +389,20 @@ const RealTimeData = () => {
 
         ws.onerror = (error) => {
           console.error("🔌 Error en RealTimeData WebSocket:", error);
-          setError("Error de conexión con el servidor");
+          // En devMode, no mostrar error ya que es normal que falle
+          if (!devMode) {
+            setError("Error de conexión con el servidor");
+          }
           setLoading(false);
         };
 
         setWsConnection(ws);
       } catch (err) {
         console.error("Error creando conexión WebSocket:", err);
-        setError("No se pudo conectar al servidor");
+        // En devMode, no mostrar error ya que es normal que falle
+        if (!devMode) {
+          setError("No se pudo conectar al servidor");
+        }
         setLoading(false);
       }
     };
@@ -584,160 +414,594 @@ const RealTimeData = () => {
         ws.close();
       }
     };
-  }, [currentApi, devMode, esp32IP, deviceId]);
+  }, [currentApi, devMode, esp32IP]);
 
-  // Calcular estadísticas
-  const totalForce = currentDevice
-    ? currentDevice.Norte +
-      currentDevice.Sur +
-      currentDevice.Este +
-      currentDevice.Oeste
-    : 0;
+  // Cleanup WebSocket al desmontar el componente
+  useEffect(() => {
+    return () => {
+      if (wsConnection) {
+        wsConnection.close();
+      }
+    };
+  }, []);
 
-  const maxForce = currentDevice
-    ? Math.max(
-        currentDevice.Norte,
-        currentDevice.Sur,
-        currentDevice.Este,
-        currentDevice.Oeste
-      )
-    : 0;
+  useEffect(() => {
+    if (historicalData.labels.length > 0 && chartRef.current) {
+      const ctx = chartRef.current.getContext("2d");
+      if (ctx) {
+        if (chartInstanceRef.current) {
+          chartInstanceRef.current.destroy();
+        }
 
-  const minForce = currentDevice
-    ? Math.min(
-        currentDevice.Norte,
-        currentDevice.Sur,
-        currentDevice.Este,
-        currentDevice.Oeste
-      )
-    : 0;
+        chartInstanceRef.current = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: historicalData.labels,
+            datasets: [
+              {
+                label: "Norte (N)",
+                data: historicalData.Norte,
+                borderColor: "#3b82f6",
+                backgroundColor: "rgba(59, 130, 246, 0.1)",
+                borderWidth: 2,
+                pointBackgroundColor: "#3b82f6",
+                pointBorderColor: "#fff",
+                pointBorderWidth: 1,
+                pointRadius: 3,
+                tension: 0.4,
+                fill: false,
+              },
+              {
+                label: "Sur (N)",
+                data: historicalData.Sur,
+                borderColor: "#ef4444",
+                backgroundColor: "rgba(239, 68, 68, 0.1)",
+                borderWidth: 2,
+                pointBackgroundColor: "#ef4444",
+                pointBorderColor: "#fff",
+                pointBorderWidth: 1,
+                pointRadius: 3,
+                tension: 0.4,
+                fill: false,
+              },
+              {
+                label: "Este (N)",
+                data: historicalData.Este,
+                borderColor: "#22c55e",
+                backgroundColor: "rgba(34, 197, 94, 0.1)",
+                borderWidth: 2,
+                pointBackgroundColor: "#22c55e",
+                pointBorderColor: "#fff",
+                pointBorderWidth: 1,
+                pointRadius: 3,
+                tension: 0.4,
+                fill: false,
+              },
+              {
+                label: "Oeste (N)",
+                data: historicalData.Oeste,
+                borderColor: "#f59e0b",
+                backgroundColor: "rgba(245, 158, 11, 0.1)",
+                borderWidth: 2,
+                pointBackgroundColor: "#f59e0b",
+                pointBorderColor: "#fff",
+                pointBorderWidth: 1,
+                pointRadius: 3,
+                tension: 0.4,
+                fill: false,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+              duration: 750,
+              easing: "easeInOutQuart",
+            },
+            plugins: {
+              legend: {
+                display: true,
+                position: "top",
+                labels: {
+                  color: darkMode ? "#e5e7eb" : "#374151",
+                  font: {
+                    size: 12,
+                    weight: 500,
+                  },
+                  usePointStyle: true,
+                  pointStyle: "circle",
+                },
+              },
+              tooltip: {
+                backgroundColor: darkMode ? "#1f2937" : "#ffffff",
+                titleColor: darkMode ? "#f9fafb" : "#111827",
+                bodyColor: darkMode ? "#d1d5db" : "#374151",
+                borderColor: darkMode ? "#374151" : "#e5e7eb",
+                borderWidth: 1,
+                cornerRadius: 8,
+                displayColors: true,
+                mode: "index",
+                intersect: false,
+              },
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                grid: {
+                  color: darkMode
+                    ? "rgba(75, 85, 99, 0.3)"
+                    : "rgba(209, 213, 219, 0.3)",
+                },
+                ticks: {
+                  color: darkMode ? "#9ca3af" : "#6b7280",
+                  font: {
+                    size: 11,
+                    weight: 500,
+                  },
+                },
+                title: {
+                  display: true,
+                  text: "Tensión (N)",
+                  color: darkMode ? "#d1d5db" : "#374151",
+                  font: {
+                    size: 12,
+                    weight: 600,
+                  },
+                },
+              },
+              x: {
+                grid: {
+                  color: darkMode
+                    ? "rgba(75, 85, 99, 0.3)"
+                    : "rgba(209, 213, 219, 0.3)",
+                },
+                ticks: {
+                  color: darkMode ? "#9ca3af" : "#6b7280",
+                  font: {
+                    size: 10,
+                    weight: 500,
+                  },
+                  maxRotation: 45,
+                  minRotation: 45,
+                },
+                title: {
+                  display: true,
+                  text: "Tiempo",
+                  color: darkMode ? "#d1d5db" : "#374151",
+                  font: {
+                    size: 12,
+                    weight: 600,
+                  },
+                },
+              },
+            },
+            interaction: {
+              mode: "index",
+              intersect: false,
+            },
+          },
+        });
+      }
+    }
 
-  const avgForce = currentDevice ? totalForce / 4 : 0;
+    return () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+      }
+    };
+  }, [historicalData, darkMode]);
 
-  const imbalance = currentDevice
-    ? (((maxForce - minForce) / avgForce) * 100).toFixed(1)
-    : 0;
+  if (loading) {
+    return (
+      <Box
+        sx={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: darkMode
+            ? "linear-gradient(135deg, #1e293b 0%, #334155 30%, #475569 70%, #64748b 100%)"
+            : "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #cbd5e1 100%)",
+        }}
+      >
+        <Box sx={{ textAlign: "center" }}>
+          <CircularProgress
+            size={60}
+            sx={{
+              color: darkMode ? "#60a5fa" : "#3b82f6",
+              mb: 3,
+            }}
+          />
+          <Typography
+            variant="h6"
+            sx={{
+              color: "text.primary",
+              fontWeight: 500,
+            }}
+          >
+            Cargando datos en tiempo real...
+          </Typography>
+        </Box>
+      </Box>
+    );
+  }
 
-  const getForceStatus = (force: number) => {
-    if (force <= THRESHOLD_MIN)
-      return { color: "warning" as const, label: "FLOJO" };
-    if (force >= THRESHOLD_CRITICAL)
-      return { color: "error" as const, label: "CRÍTICO" };
-    if (force >= THRESHOLD_WARNING)
-      return { color: "warning" as const, label: "ALERTA" };
-    return { color: "success" as const, label: "NORMAL" };
-  };
+  if (error) {
+    return (
+      <Box
+        sx={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: darkMode
+            ? "linear-gradient(135deg, #1e293b 0%, #334155 30%, #475569 70%, #64748b 100%)"
+            : "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #cbd5e1 100%)",
+          p: 3,
+        }}
+      >
+        <Alert
+          severity="error"
+          sx={{
+            maxWidth: 400,
+            borderRadius: 2,
+            boxShadow: darkMode
+              ? "0 10px 25px -5px rgba(0, 0, 0, 0.5)"
+              : "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
+          }}
+        >
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            Error de Conexión
+          </Typography>
+          {error}
+        </Alert>
+      </Box>
+    );
+  }
 
-  const getCableColor = (force: number) => {
-    if (force <= THRESHOLD_MIN) return "#ff9800";
-    if (force >= THRESHOLD_CRITICAL) return "#f44336";
-    if (force >= THRESHOLD_WARNING) return "#ff9800";
-    return "#4caf50";
-  };
+  if (!currentDevice) {
+    return (
+      <Box
+        sx={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: darkMode
+            ? "linear-gradient(135deg, #1e293b 0%, #334155 30%, #475569 70%, #64748b 100%)"
+            : "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #cbd5e1 100%)",
+          p: 3,
+        }}
+      >
+        <Alert
+          severity="warning"
+          sx={{
+            maxWidth: 400,
+            borderRadius: 2,
+            boxShadow: darkMode
+              ? "0 10px 25px -5px rgba(0, 0, 0, 0.5)"
+              : "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
+          }}
+        >
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            Dispositivo No Encontrado
+          </Typography>
+          No se pudo encontrar el dispositivo con ID: {deviceId}
+        </Alert>
+      </Box>
+    );
+  }
+
+  const forces = [
+    currentDevice.Norte,
+    currentDevice.Sur,
+    currentDevice.Este,
+    currentDevice.Oeste,
+  ];
+
+  // Nombres de los cables para mostrar información más detallada
+  const cableNames = ["Norte", "Sur", "Este", "Oeste"];
+  const cableValues = [
+    currentDevice.Norte,
+    currentDevice.Sur,
+    currentDevice.Este,
+    currentDevice.Oeste,
+  ];
+
+  const maxForce = Math.max(...forces);
+  const minForce = Math.min(...forces);
+  const avgForce = forces.reduce((a, b) => a + b, 0) / forces.length;
+  const imbalance = (((maxForce - minForce) / avgForce) * 100).toFixed(1);
+
+  // Encontrar qué cable tiene el máximo y mínimo
+  const maxCableIndex = cableValues.indexOf(maxForce);
+  const minCableIndex = cableValues.indexOf(minForce);
+  const maxCableName = cableNames[maxCableIndex];
+  const minCableName = cableNames[minCableIndex];
 
   return (
-    <Box sx={{ height: "100vh", display: "flex", flexDirection: "column" }}>
-      {/* AppBar */}
-      <AppBar position="static">
-        <Toolbar>
+    <Box
+      sx={{
+        minHeight: "100vh",
+        background: darkMode
+          ? "linear-gradient(135deg, #1e293b 0%, #334155 30%, #475569 70%, #64748b 100%)"
+          : "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #cbd5e1 100%)",
+      }}
+    >
+      {/* AppBar Mejorado */}
+      <AppBar
+        position="sticky"
+        elevation={0}
+        sx={{
+          background: darkMode
+            ? "linear-gradient(90deg, #334155 0%, #475569 50%, #64748b 100%)"
+            : "linear-gradient(90deg, #ffffff 0%, #f8fafc 50%, #e2e8f0 100%)",
+          borderBottom: darkMode ? "1px solid #374151" : "1px solid #e2e8f0",
+          backdropFilter: "blur(10px)",
+        }}
+      >
+        <Toolbar sx={{ px: { xs: 2, sm: 3 } }}>
           <IconButton
-            color="inherit"
+            edge="start"
             onClick={() => navigate("/dashboard")}
-            sx={{ mr: 2 }}
+            sx={{
+              mr: 2,
+              color: "text.primary",
+              bgcolor: darkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
+              "&:hover": {
+                bgcolor: darkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)",
+                transform: "scale(1.05)",
+              },
+              transition: "all 0.2s ease",
+            }}
           >
             <BackIcon />
           </IconButton>
-
-          <TowerIcon sx={{ mr: 2 }} />
-
           <Box sx={{ flexGrow: 1 }}>
-            <Typography variant="h6">
-              Device #{deviceId} - Monitor de Torre
+            <Typography
+              variant="h6"
+              sx={{
+                fontWeight: 600,
+                color: "text.primary",
+                fontSize: { xs: "1.1rem", sm: "1.25rem" },
+              }}
+            >
+              🗼 Torre {currentDevice.unit_name}
             </Typography>
-            <Typography variant="caption">
-              {lastUpdate &&
-                `Última actualización: ${lastUpdate.toLocaleTimeString()}`}
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+                fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                fontWeight: 500,
+              }}
+            >
+              ID: {currentDevice.id} • Monitoreo en Tiempo Real
             </Typography>
           </Box>
-
-          {currentUser?.role === "ADMIN" && (
-            <IconButton color="inherit" onClick={() => navigate("/admin")}>
-              <SettingsIcon />
-            </IconButton>
-          )}
+          <IconButton
+            sx={{
+              color: "text.primary",
+              bgcolor: darkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
+              "&:hover": {
+                bgcolor: darkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)",
+                transform: "scale(1.05)",
+              },
+              transition: "all 0.2s ease",
+            }}
+          >
+            <SettingsIcon />
+          </IconButton>
         </Toolbar>
       </AppBar>
 
-      {/* Contenido */}
-      <Box sx={{ flexGrow: 1, p: 3, overflow: "auto" }}>
-        {loading && (
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              height: 200,
-            }}
-          >
-            <CircularProgress />
-            <Typography variant="body1" sx={{ ml: 2 }}>
-              Conectando con el dispositivo...
-            </Typography>
-          </Box>
-        )}
-
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-
+      {/* Contenido Principal */}
+      <Box sx={{ p: { xs: 2, sm: 3 } }}>
         {currentDevice && (
-          <Grid container spacing={3}>
-            {/* Panel de Estadísticas Clave */}
+          <Grid container spacing={{ xs: 2, sm: 3 }}>
+            {/* Panel de Estadísticas Clave mejorado */}
             <Grid item xs={12}>
-              <Card>
-                <CardContent>
-                  <Grid container spacing={2}>
+              <Card
+                sx={{
+                  background: darkMode
+                    ? "linear-gradient(135deg, #374151 0%, #4b5563 50%, #6b7280 100%)"
+                    : "linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)",
+                  border: darkMode ? "1px solid #6b7280" : "1px solid #E2E8F0",
+                }}
+              >
+                <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+                  <Typography
+                    variant="h6"
+                    gutterBottom
+                    sx={{
+                      mb: 3,
+                      fontWeight: 600,
+                      color: "text.primary",
+                    }}
+                  >
+                    📊 Estadísticas en Tiempo Real
+                  </Typography>
+                  <Grid container spacing={{ xs: 2, sm: 3 }}>
                     <Grid item xs={6} sm={3}>
-                      <Box sx={{ textAlign: "center" }}>
-                        <Typography variant="h4" color="primary">
+                      <Box
+                        sx={{
+                          textAlign: "center",
+                          p: { xs: 1.5, sm: 2 },
+                          borderRadius: 2,
+                          background: darkMode
+                            ? "rgba(34, 197, 94, 0.1)"
+                            : "rgba(34, 197, 94, 0.05)",
+                          border: darkMode
+                            ? "1px solid rgba(34, 197, 94, 0.2)"
+                            : "1px solid rgba(34, 197, 94, 0.1)",
+                        }}
+                      >
+                        <Typography
+                          variant="h4"
+                          sx={{
+                            color: "success.main",
+                            fontWeight: 700,
+                            fontSize: { xs: "1.5rem", sm: "2rem" },
+                          }}
+                        >
                           {maxForce}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: "text.secondary",
+                            fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                            fontWeight: 500,
+                            display: "block",
+                          }}
+                        >
                           Tensión Máxima (N)
                         </Typography>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: "success.main",
+                            fontSize: { xs: "0.7rem", sm: "0.8rem" },
+                            fontWeight: 600,
+                            display: "block",
+                            mt: 0.5,
+                          }}
+                        >
+                          📍 Cable {maxCableName}
+                        </Typography>
                       </Box>
                     </Grid>
                     <Grid item xs={6} sm={3}>
-                      <Box sx={{ textAlign: "center" }}>
-                        <Typography variant="h4" color="secondary">
+                      <Box
+                        sx={{
+                          textAlign: "center",
+                          p: { xs: 1.5, sm: 2 },
+                          borderRadius: 2,
+                          background: darkMode
+                            ? "rgba(239, 68, 68, 0.1)"
+                            : "rgba(239, 68, 68, 0.05)",
+                          border: darkMode
+                            ? "1px solid rgba(239, 68, 68, 0.2)"
+                            : "1px solid rgba(239, 68, 68, 0.1)",
+                        }}
+                      >
+                        <Typography
+                          variant="h4"
+                          sx={{
+                            color: "error.main",
+                            fontWeight: 700,
+                            fontSize: { xs: "1.5rem", sm: "2rem" },
+                          }}
+                        >
                           {minForce}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: "text.secondary",
+                            fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                            fontWeight: 500,
+                            display: "block",
+                          }}
+                        >
                           Tensión Mínima (N)
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: "error.main",
+                            fontSize: { xs: "0.7rem", sm: "0.8rem" },
+                            fontWeight: 600,
+                            display: "block",
+                            mt: 0.5,
+                          }}
+                        >
+                          📍 Cable {minCableName}
                         </Typography>
                       </Box>
                     </Grid>
                     <Grid item xs={6} sm={3}>
-                      <Box sx={{ textAlign: "center" }}>
-                        <Typography variant="h4">
+                      <Box
+                        sx={{
+                          textAlign: "center",
+                          p: { xs: 1.5, sm: 2 },
+                          borderRadius: 2,
+                          background: darkMode
+                            ? "rgba(59, 130, 246, 0.1)"
+                            : "rgba(59, 130, 246, 0.05)",
+                          border: darkMode
+                            ? "1px solid rgba(59, 130, 246, 0.2)"
+                            : "1px solid rgba(59, 130, 246, 0.1)",
+                        }}
+                      >
+                        <Typography
+                          variant="h4"
+                          sx={{
+                            color: "info.main",
+                            fontWeight: 700,
+                            fontSize: { xs: "1.5rem", sm: "2rem" },
+                          }}
+                        >
                           {avgForce.toFixed(0)}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: "text.secondary",
+                            fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                            fontWeight: 500,
+                          }}
+                        >
                           Promedio (N)
                         </Typography>
                       </Box>
                     </Grid>
                     <Grid item xs={6} sm={3}>
-                      <Box sx={{ textAlign: "center" }}>
+                      <Box
+                        sx={{
+                          textAlign: "center",
+                          p: { xs: 1.5, sm: 2 },
+                          borderRadius: 2,
+                          background:
+                            Number(imbalance) > 50
+                              ? darkMode
+                                ? "rgba(245, 158, 11, 0.1)"
+                                : "rgba(245, 158, 11, 0.05)"
+                              : darkMode
+                              ? "rgba(34, 197, 94, 0.1)"
+                              : "rgba(34, 197, 94, 0.05)",
+                          border:
+                            Number(imbalance) > 50
+                              ? darkMode
+                                ? "1px solid rgba(245, 158, 11, 0.2)"
+                                : "1px solid rgba(245, 158, 11, 0.1)"
+                              : darkMode
+                              ? "1px solid rgba(34, 197, 94, 0.2)"
+                              : "1px solid rgba(34, 197, 94, 0.1)",
+                        }}
+                      >
                         <Typography
                           variant="h4"
-                          color={Number(imbalance) > 50 ? "error" : "success"}
+                          sx={{
+                            color:
+                              Number(imbalance) > 50
+                                ? "warning.main"
+                                : "success.main",
+                            fontWeight: 700,
+                            fontSize: { xs: "1.5rem", sm: "2rem" },
+                          }}
                         >
                           {imbalance}%
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: "text.secondary",
+                            fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                            fontWeight: 500,
+                          }}
+                        >
                           Desbalance
                         </Typography>
                       </Box>
@@ -749,32 +1013,79 @@ const RealTimeData = () => {
 
             {/* Vista de Torre */}
             <Grid item xs={12} lg={6}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>
-                    Vista de Torre (Tensión en Tiempo Real)
+              <Card
+                sx={{
+                  background: darkMode
+                    ? "linear-gradient(135deg, #374151 0%, #4b5563 50%, #6b7280 100%)"
+                    : "linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)",
+                  border: darkMode ? "1px solid #6b7280" : "1px solid #E2E8F0",
+                }}
+              >
+                <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+                  <Typography
+                    variant="h6"
+                    gutterBottom
+                    sx={{
+                      mb: 3,
+                      fontWeight: 600,
+                      color: "text.primary",
+                    }}
+                  >
+                    🗼 Vista de Torre (Tensión en Tiempo Real)
                   </Typography>
                   <TowerView device={currentDevice} darkMode={darkMode} />
                   <Box
                     sx={{
-                      mt: 2,
-                      display: "flex",
-                      justifyContent: "center",
-                      gap: 2,
-                      flexWrap: "wrap",
+                      mt: 3,
+                      p: 2,
+                      borderRadius: 2,
+                      background: darkMode
+                        ? "rgba(255,255,255,0.1)"
+                        : "rgba(0,0,0,0.02)",
+                      border: darkMode
+                        ? "1px solid rgba(255,255,255,0.25)"
+                        : "1px solid rgba(0,0,0,0.05)",
                     }}
                   >
-                    <Chip
-                      label="Normal: < 1500N"
-                      color="success"
-                      size="small"
-                    />
-                    <Chip
-                      label="Alerta: 1500-2000N"
-                      color="warning"
-                      size="small"
-                    />
-                    <Chip label="Crítico: > 2000N" color="error" size="small" />
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        display: "block",
+                        mb: 1.5,
+                        fontWeight: 600,
+                        color: "text.secondary",
+                        textAlign: "center",
+                      }}
+                    >
+                      Leyenda de Estados
+                    </Typography>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        justifyContent: "center",
+                        gap: { xs: 1, sm: 2 },
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <Chip
+                        label="Normal: < 1500N"
+                        color="success"
+                        size="small"
+                        sx={{ fontWeight: 500 }}
+                      />
+                      <Chip
+                        label="Alerta: 1500-2000N"
+                        color="warning"
+                        size="small"
+                        sx={{ fontWeight: 500 }}
+                      />
+                      <Chip
+                        label="Crítico: > 2000N"
+                        color="error"
+                        size="small"
+                        sx={{ fontWeight: 500 }}
+                      />
+                    </Box>
                   </Box>
                 </CardContent>
               </Card>
@@ -782,32 +1093,59 @@ const RealTimeData = () => {
 
             {/* Estado de Cables */}
             <Grid item xs={12} lg={6}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>
-                    Estado por Cable
+              <Card
+                sx={{
+                  background: darkMode
+                    ? "linear-gradient(135deg, #374151 0%, #4b5563 50%, #6b7280 100%)"
+                    : "linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)",
+                  border: darkMode ? "1px solid #6b7280" : "1px solid #E2E8F0",
+                }}
+              >
+                <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+                  <Typography
+                    variant="h6"
+                    gutterBottom
+                    sx={{
+                      mb: 3,
+                      fontWeight: 600,
+                      color: "text.primary",
+                    }}
+                  >
+                    ⚡ Estado por Cable
                   </Typography>
-                  <Grid container spacing={2}>
+                  <Grid container spacing={{ xs: 2, sm: 3 }}>
                     {[
                       {
                         name: "Norte",
                         value: currentDevice.Norte,
-                        color: "rgba(54, 162, 235, 0.1)",
+                        icon: "🧭",
+                        gradient: darkMode
+                          ? "linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%)"
+                          : "linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0.02) 100%)",
                       },
                       {
                         name: "Sur",
                         value: currentDevice.Sur,
-                        color: "rgba(255, 99, 132, 0.1)",
+                        icon: "🧭",
+                        gradient: darkMode
+                          ? "linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.05) 100%)"
+                          : "linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(239, 68, 68, 0.02) 100%)",
                       },
                       {
                         name: "Este",
                         value: currentDevice.Este,
-                        color: "rgba(75, 192, 192, 0.1)",
+                        icon: "➡️",
+                        gradient: darkMode
+                          ? "linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.05) 100%)"
+                          : "linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(34, 197, 94, 0.02) 100%)",
                       },
                       {
                         name: "Oeste",
                         value: currentDevice.Oeste,
-                        color: "rgba(255, 206, 86, 0.1)",
+                        icon: "⬅️",
+                        gradient: darkMode
+                          ? "linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.05) 100%)"
+                          : "linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0.02) 100%)",
                       },
                     ].map((cable) => {
                       const status = getForceStatus(cable.value);
@@ -815,33 +1153,64 @@ const RealTimeData = () => {
                         <Grid item xs={12} sm={6} key={cable.name}>
                           <Box
                             sx={{
-                              p: 2,
-                              bgcolor: cable.color,
+                              p: { xs: 2, sm: 2.5 },
+                              background: cable.gradient,
                               border: `2px solid ${getCableColor(cable.value)}`,
-                              borderRadius: 1,
+                              borderRadius: 2,
+                              transition: "all 0.3s ease",
+                              "&:hover": {
+                                transform: "translateY(-2px)",
+                                boxShadow: `0 8px 25px -8px ${getCableColor(
+                                  cable.value
+                                )}`,
+                              },
                             }}
                           >
                             <Box
                               sx={{
                                 display: "flex",
                                 justifyContent: "space-between",
-                                alignItems: "center",
+                                alignItems: "flex-start",
+                                mb: 1,
                               }}
                             >
-                              <Box>
-                                <Typography variant="body2" fontWeight="bold">
-                                  {cable.name}
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 1,
+                                }}
+                              >
+                                <Typography sx={{ fontSize: "1.2rem" }}>
+                                  {cable.icon}
                                 </Typography>
-                                <Typography variant="h5" fontWeight="bold">
-                                  {cable.value} N
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    fontWeight: 600,
+                                    color: "text.primary",
+                                  }}
+                                >
+                                  {cable.name}
                                 </Typography>
                               </Box>
                               <Chip
                                 label={status.label}
                                 color={status.color}
                                 size="small"
+                                sx={{ fontWeight: 500 }}
                               />
                             </Box>
+                            <Typography
+                              variant="h5"
+                              sx={{
+                                fontWeight: 700,
+                                color: getCableColor(cable.value),
+                                fontSize: { xs: "1.25rem", sm: "1.5rem" },
+                              }}
+                            >
+                              {cable.value} N
+                            </Typography>
                           </Box>
                         </Grid>
                       );
@@ -853,9 +1222,37 @@ const RealTimeData = () => {
 
             {/* Gráfico Histórico de Líneas */}
             <Grid item xs={12}>
-              <Card>
-                <CardContent>
-                  <Box sx={{ height: 300, position: "relative" }}>
+              <Card
+                sx={{
+                  background: darkMode
+                    ? "linear-gradient(135deg, #374151 0%, #4b5563 50%, #6b7280 100%)"
+                    : "linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)",
+                  border: darkMode ? "1px solid #6b7280" : "1px solid #E2E8F0",
+                }}
+              >
+                <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+                  <Typography
+                    variant="h6"
+                    gutterBottom
+                    sx={{
+                      mb: 3,
+                      fontWeight: 600,
+                      color: "text.primary",
+                    }}
+                  >
+                    📈 Gráfico Histórico de Tensiones
+                  </Typography>
+                  <Box
+                    sx={{
+                      height: { xs: 250, sm: 300 },
+                      position: "relative",
+                      borderRadius: 2,
+                      overflow: "hidden",
+                      background: darkMode
+                        ? "rgba(255,255,255,0.08)"
+                        : "rgba(0,0,0,0.02)",
+                    }}
+                  >
                     <canvas ref={chartRef} />
                   </Box>
                 </CardContent>

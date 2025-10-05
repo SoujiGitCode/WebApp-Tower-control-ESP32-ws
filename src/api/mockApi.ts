@@ -358,6 +358,18 @@ export class MockApiClient {
     return createSuccessResponse(undefined, "Password changed successfully");
   }
 
+  // ========== DATOS DE DISPOSITIVOS ==========
+  async getDevices(): Promise<Device[]> {
+    await delay(300);
+    console.log(
+      `📊 [MOCK] Obteniendo datos de dispositivos desde: ${this.baseURL}`
+    );
+
+    // Generar datos aleatorios para simular datos en tiempo real
+    const devicesData = this.generateRandomDevicesData();
+    return devicesData.devices;
+  }
+
   // ========== RESET DE FÁBRICA ==========
   async factoryReset(): Promise<ApiResponse> {
     await delay(1500);
