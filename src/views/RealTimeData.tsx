@@ -12,6 +12,8 @@ import {
   Chip,
   CircularProgress,
   Alert,
+  Tabs,
+  Tab,
 } from "@mui/material";
 import {
   ArrowBack as BackIcon,
@@ -272,22 +274,10 @@ const RealTimeData = () => {
   const chartInstanceRef = useRef<Chart | null>(null);
   const [wsConnection, setWsConnection] = useState<any>(null);
 
-  // Estado para mantener historial de datos para el gráfico
-  const [historicalData, setHistoricalData] = useState<{
-    labels: string[];
-    Norte: number[];
-    Sur: number[];
-    Este: number[];
-    Oeste: number[];
-  }>({
-    labels: [],
-    Norte: [],
-    Sur: [],
-    Este: [],
-    Oeste: [],
-  });
-
-  const maxHistoryPoints = 20; // Mantener últimos 20 puntos de datos
+  // Estado para las tabs de vista de torre
+  const [towerViewTab, setTowerViewTab] = useState<"circles" | "chart">(
+    "circles"
+  );
 
   const currentDevice = devicesData.find(
     (device) => device.id === Number(deviceId)
@@ -297,43 +287,6 @@ const RealTimeData = () => {
     if (force < 1500) return "#22c55e"; // Verde - Normal
     if (force < 2000) return "#f59e0b"; // Naranja - Alerta
     return "#ef4444"; // Rojo - Crítico
-  };
-
-  // Función para actualizar el historial de datos
-  const updateHistoricalData = (device: Device) => {
-    const now = new Date();
-    const timeLabel = now.toLocaleTimeString("es-ES", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-
-    setHistoricalData((prev) => {
-      const newLabels = [...prev.labels, timeLabel];
-      const newNorte = [...prev.Norte, device.Norte];
-      const newSur = [...prev.Sur, device.Sur];
-      const newEste = [...prev.Este, device.Este];
-      const newOeste = [...prev.Oeste, device.Oeste];
-
-      // Mantener solo los últimos maxHistoryPoints
-      if (newLabels.length > maxHistoryPoints) {
-        return {
-          labels: newLabels.slice(-maxHistoryPoints),
-          Norte: newNorte.slice(-maxHistoryPoints),
-          Sur: newSur.slice(-maxHistoryPoints),
-          Este: newEste.slice(-maxHistoryPoints),
-          Oeste: newOeste.slice(-maxHistoryPoints),
-        };
-      }
-
-      return {
-        labels: newLabels,
-        Norte: newNorte,
-        Sur: newSur,
-        Este: newEste,
-        Oeste: newOeste,
-      };
-    });
   };
 
   const getForceStatus = (force: number) => {
@@ -370,13 +323,11 @@ const RealTimeData = () => {
             const data = JSON.parse(event.data) as DevicesData;
             setDevicesData(data.devices);
 
-            // Actualizar historial para el dispositivo actual
-            const currentDeviceData = data.devices.find(
-              (device) => device.id === Number(deviceId)
-            );
-            if (currentDeviceData) {
-              updateHistoricalData(currentDeviceData);
-            }
+            // Datos actualizados via WebSocket
+            console.log(`🔌 WebSocket data received:`, {
+              devices: data.devices.length,
+              deviceId: deviceId,
+            });
           } catch (err) {
             console.error("Error parseando datos WebSocket:", err);
           }
@@ -425,8 +376,9 @@ const RealTimeData = () => {
     };
   }, []);
 
+  // Configurar gráfico simple cuando está en la tab "chart"
   useEffect(() => {
-    if (historicalData.labels.length > 0 && chartRef.current) {
+    if (chartRef.current && currentDevice && towerViewTab === "chart") {
       const ctx = chartRef.current.getContext("2d");
       if (ctx) {
         if (chartInstanceRef.current) {
@@ -434,61 +386,26 @@ const RealTimeData = () => {
         }
 
         chartInstanceRef.current = new Chart(ctx, {
-          type: "line",
+          type: "bar",
           data: {
-            labels: historicalData.labels,
+            labels: ["Norte", "Sur", "Este", "Oeste"],
             datasets: [
               {
-                label: "Norte (N)",
-                data: historicalData.Norte,
-                borderColor: "#3b82f6",
-                backgroundColor: "rgba(59, 130, 246, 0.1)",
+                label: "Tensión (N)",
+                data: [
+                  currentDevice.Norte,
+                  currentDevice.Sur,
+                  currentDevice.Este,
+                  currentDevice.Oeste,
+                ],
+                backgroundColor: [
+                  "rgba(59, 130, 246, 0.8)",
+                  "rgba(239, 68, 68, 0.8)",
+                  "rgba(34, 197, 94, 0.8)",
+                  "rgba(245, 158, 11, 0.8)",
+                ],
+                borderColor: ["#3b82f6", "#ef4444", "#22c55e", "#f59e0b"],
                 borderWidth: 2,
-                pointBackgroundColor: "#3b82f6",
-                pointBorderColor: "#fff",
-                pointBorderWidth: 1,
-                pointRadius: 3,
-                tension: 0.4,
-                fill: false,
-              },
-              {
-                label: "Sur (N)",
-                data: historicalData.Sur,
-                borderColor: "#ef4444",
-                backgroundColor: "rgba(239, 68, 68, 0.1)",
-                borderWidth: 2,
-                pointBackgroundColor: "#ef4444",
-                pointBorderColor: "#fff",
-                pointBorderWidth: 1,
-                pointRadius: 3,
-                tension: 0.4,
-                fill: false,
-              },
-              {
-                label: "Este (N)",
-                data: historicalData.Este,
-                borderColor: "#22c55e",
-                backgroundColor: "rgba(34, 197, 94, 0.1)",
-                borderWidth: 2,
-                pointBackgroundColor: "#22c55e",
-                pointBorderColor: "#fff",
-                pointBorderWidth: 1,
-                pointRadius: 3,
-                tension: 0.4,
-                fill: false,
-              },
-              {
-                label: "Oeste (N)",
-                data: historicalData.Oeste,
-                borderColor: "#f59e0b",
-                backgroundColor: "rgba(245, 158, 11, 0.1)",
-                borderWidth: 2,
-                pointBackgroundColor: "#f59e0b",
-                pointBorderColor: "#fff",
-                pointBorderWidth: 1,
-                pointRadius: 3,
-                tension: 0.4,
-                fill: false,
               },
             ],
           },
@@ -496,22 +413,11 @@ const RealTimeData = () => {
             responsive: true,
             maintainAspectRatio: false,
             animation: {
-              duration: 750,
-              easing: "easeInOutQuart",
+              duration: 300,
             },
             plugins: {
               legend: {
-                display: true,
-                position: "top",
-                labels: {
-                  color: darkMode ? "#e5e7eb" : "#374151",
-                  font: {
-                    size: 12,
-                    weight: 500,
-                  },
-                  usePointStyle: true,
-                  pointStyle: "circle",
-                },
+                display: false,
               },
               tooltip: {
                 backgroundColor: darkMode ? "#1f2937" : "#ffffff",
@@ -520,9 +426,6 @@ const RealTimeData = () => {
                 borderColor: darkMode ? "#374151" : "#e5e7eb",
                 borderWidth: 1,
                 cornerRadius: 8,
-                displayColors: true,
-                mode: "index",
-                intersect: false,
               },
             },
             scales: {
@@ -552,45 +455,30 @@ const RealTimeData = () => {
               },
               x: {
                 grid: {
-                  color: darkMode
-                    ? "rgba(75, 85, 99, 0.3)"
-                    : "rgba(209, 213, 219, 0.3)",
+                  display: false,
                 },
                 ticks: {
                   color: darkMode ? "#9ca3af" : "#6b7280",
                   font: {
-                    size: 10,
+                    size: 11,
                     weight: 500,
-                  },
-                  maxRotation: 45,
-                  minRotation: 45,
-                },
-                title: {
-                  display: true,
-                  text: "Tiempo",
-                  color: darkMode ? "#d1d5db" : "#374151",
-                  font: {
-                    size: 12,
-                    weight: 600,
                   },
                 },
               },
-            },
-            interaction: {
-              mode: "index",
-              intersect: false,
             },
           },
         });
       }
     }
 
+    // Limpiar gráfico si no está en la tab "chart"
     return () => {
-      if (chartInstanceRef.current) {
+      if (chartInstanceRef.current && towerViewTab !== "chart") {
         chartInstanceRef.current.destroy();
+        chartInstanceRef.current = null;
       }
     };
-  }, [historicalData, darkMode]);
+  }, [currentDevice, towerViewTab, darkMode]);
 
   if (loading) {
     return (
@@ -1026,67 +914,125 @@ const RealTimeData = () => {
                     variant="h6"
                     gutterBottom
                     sx={{
-                      mb: 3,
+                      mb: 2,
                       fontWeight: 600,
                       color: "text.primary",
                     }}
                   >
                     🗼 Vista de Torre (Tensión en Tiempo Real)
                   </Typography>
-                  <TowerView device={currentDevice} darkMode={darkMode} />
-                  <Box
-                    sx={{
-                      mt: 3,
-                      p: 2,
-                      borderRadius: 2,
-                      background: darkMode
-                        ? "rgba(255,255,255,0.1)"
-                        : "rgba(0,0,0,0.02)",
-                      border: darkMode
-                        ? "1px solid rgba(255,255,255,0.25)"
-                        : "1px solid rgba(0,0,0,0.05)",
-                    }}
-                  >
-                    <Typography
-                      variant="caption"
+
+                  {/* Tabs para alternar entre vista círculos y gráfico */}
+                  <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 3 }}>
+                    <Tabs
+                      value={towerViewTab}
+                      onChange={(_, newValue) => setTowerViewTab(newValue)}
+                      variant="fullWidth"
                       sx={{
-                        display: "block",
-                        mb: 1.5,
-                        fontWeight: 600,
-                        color: "text.secondary",
-                        textAlign: "center",
+                        "& .MuiTab-root": {
+                          minHeight: 40,
+                          fontSize: "0.875rem",
+                          color: darkMode ? "#9ca3af" : "#6b7280",
+                        },
+                        "& .Mui-selected": {
+                          color: darkMode ? "#60a5fa" : "#3b82f6",
+                        },
+                        "& .MuiTabs-indicator": {
+                          backgroundColor: darkMode ? "#60a5fa" : "#3b82f6",
+                          height: 2,
+                        },
                       }}
                     >
-                      Leyenda de Estados
-                    </Typography>
-                    <Box
-                      sx={{
-                        display: "flex",
-                        justifyContent: "center",
-                        gap: { xs: 1, sm: 2 },
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <Chip
-                        label="Normal: < 1500N"
-                        color="success"
-                        size="small"
-                        sx={{ fontWeight: 500 }}
+                      <Tab
+                        value="circles"
+                        label="🔵 Vista Círculos"
+                        sx={{ textTransform: "none" }}
                       />
-                      <Chip
-                        label="Alerta: 1500-2000N"
-                        color="warning"
-                        size="small"
-                        sx={{ fontWeight: 500 }}
+                      <Tab
+                        value="chart"
+                        label="📊 Vista Gráfico"
+                        sx={{ textTransform: "none" }}
                       />
-                      <Chip
-                        label="Crítico: > 2000N"
-                        color="error"
-                        size="small"
-                        sx={{ fontWeight: 500 }}
-                      />
-                    </Box>
+                    </Tabs>
                   </Box>
+
+                  {/* Contenido según la tab seleccionada */}
+                  {towerViewTab === "circles" && (
+                    <>
+                      <TowerView device={currentDevice} darkMode={darkMode} />
+                      <Box
+                        sx={{
+                          mt: 3,
+                          p: 2,
+                          borderRadius: 2,
+                          background: darkMode
+                            ? "rgba(255,255,255,0.1)"
+                            : "rgba(0,0,0,0.02)",
+                          border: darkMode
+                            ? "1px solid rgba(255,255,255,0.25)"
+                            : "1px solid rgba(0,0,0,0.05)",
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            display: "block",
+                            mb: 1.5,
+                            fontWeight: 600,
+                            color: "text.secondary",
+                            textAlign: "center",
+                          }}
+                        >
+                          Leyenda de Estados
+                        </Typography>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            justifyContent: "center",
+                            gap: { xs: 1, sm: 2 },
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <Chip
+                            label="Normal: < 1500N"
+                            color="success"
+                            size="small"
+                            sx={{ fontWeight: 500 }}
+                          />
+                          <Chip
+                            label="Alerta: 1500-2000N"
+                            color="warning"
+                            size="small"
+                            sx={{ fontWeight: 500 }}
+                          />
+                          <Chip
+                            label="Crítico: > 2000N"
+                            color="error"
+                            size="small"
+                            sx={{ fontWeight: 500 }}
+                          />
+                        </Box>
+                      </Box>
+                    </>
+                  )}
+
+                  {towerViewTab === "chart" && (
+                    <Box>
+                      <Box
+                        sx={{
+                          height: { xs: 250, sm: 300 },
+                          position: "relative",
+                          borderRadius: 2,
+                          overflow: "hidden",
+                          background: darkMode
+                            ? "rgba(255,255,255,0.08)"
+                            : "rgba(0,0,0,0.02)",
+                        }}
+                      >
+                        <canvas ref={chartRef} />
+                      </Box>
+                    </Box>
+                  )}
                 </CardContent>
               </Card>
             </Grid>
@@ -1216,45 +1162,6 @@ const RealTimeData = () => {
                       );
                     })}
                   </Grid>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            {/* Gráfico Histórico de Líneas */}
-            <Grid item xs={12}>
-              <Card
-                sx={{
-                  background: darkMode
-                    ? "linear-gradient(135deg, #374151 0%, #4b5563 50%, #6b7280 100%)"
-                    : "linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)",
-                  border: darkMode ? "1px solid #6b7280" : "1px solid #E2E8F0",
-                }}
-              >
-                <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
-                  <Typography
-                    variant="h6"
-                    gutterBottom
-                    sx={{
-                      mb: 3,
-                      fontWeight: 600,
-                      color: "text.primary",
-                    }}
-                  >
-                    📈 Gráfico Histórico de Tensiones
-                  </Typography>
-                  <Box
-                    sx={{
-                      height: { xs: 250, sm: 300 },
-                      position: "relative",
-                      borderRadius: 2,
-                      overflow: "hidden",
-                      background: darkMode
-                        ? "rgba(255,255,255,0.08)"
-                        : "rgba(0,0,0,0.02)",
-                    }}
-                  >
-                    <canvas ref={chartRef} />
-                  </Box>
                 </CardContent>
               </Card>
             </Grid>
