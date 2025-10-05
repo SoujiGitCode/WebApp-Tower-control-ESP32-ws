@@ -23,8 +23,8 @@ import {
   Timeline as RealtimeIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
-import { useAppContext } from "../context/AppContext";
-import { Device, DevicesData } from "../api/index";
+import { useAppContext } from "../../context/AppContext";
+import { Device, DevicesData } from "../../api/index";
 import { toast } from "react-toastify";
 
 interface DeviceCardProps {

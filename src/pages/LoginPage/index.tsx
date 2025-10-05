@@ -20,10 +20,10 @@ import {
   Wifi as WifiIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
-import { useAppContext } from "../context/AppContext";
+import { useAppContext } from "../../context/AppContext";
 import { toast } from "react-toastify";
-import AccessImage from "../assets/access.svg";
-import { MOCK_CREDENTIALS, mockApiClient } from "../api/mockApi";
+import AccessImage from "../../assets/access.svg";
+import { MOCK_CREDENTIALS, mockApiClient } from "../../api/mockApi";
 
 const LoginPage = () => {
   const navigate = useNavigate();

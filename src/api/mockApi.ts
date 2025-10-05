@@ -385,11 +385,11 @@ export class MockApiClient {
   }
 
   // ========== FUNCIONES DE WEBSOCKET MOCK ==========
-  createWebSocketConnection(ip?: string): MockWebSocket {
+  createWebSocketConnection(ip?: string): WebSocket {
     const wsIP = ip || this.baseURL.replace("http://", "");
     const wsUrl = `ws://${wsIP}:8080`;
     console.log(`🎭 [MOCK] Creando WebSocket mock a: ${wsUrl}`);
-    return new MockWebSocket(wsUrl);
+    return new MockWebSocket(wsUrl) as any as WebSocket;
   }
 
   getWebSocketUrl(ip?: string): string {
@@ -424,6 +424,23 @@ class MockWebSocket {
   private interval: any = null;
   public url: string;
 
+  // Propiedades adicionales para compatibilidad con WebSocket
+  public binaryType: BinaryType = "blob";
+  public bufferedAmount: number = 0;
+  public extensions: string = "";
+  public protocol: string = "";
+
+  // Constantes WebSocket
+  public static readonly CONNECTING = 0;
+  public static readonly OPEN = 1;
+  public static readonly CLOSING = 2;
+  public static readonly CLOSED = 3;
+
+  public readonly CONNECTING = 0;
+  public readonly OPEN = 1;
+  public readonly CLOSING = 2;
+  public readonly CLOSED = 3;
+
   constructor(url: string) {
     this.url = url;
     console.log(`🎭 [MOCK WebSocket] Conectando a ${url}`);
@@ -449,19 +466,40 @@ class MockWebSocket {
     }, 1000); // Enviar datos cada segundo
   }
 
-  send(data: string) {
+  send(data: string | ArrayBufferLike | Blob | ArrayBufferView) {
     console.log(`🎭 [MOCK WebSocket] Enviando:`, data);
   }
 
-  close() {
+  close(code?: number, reason?: string) {
     console.log(`🎭 [MOCK WebSocket] Cerrando conexión`);
     this.readyState = 3; // CLOSED
     if (this.interval) {
       clearInterval(this.interval);
     }
     if (this.onclose) {
-      this.onclose(new CloseEvent("close"));
+      this.onclose(new CloseEvent("close", { code: code || 1000, reason }));
     }
+  }
+
+  // Métodos adicionales para compatibilidad
+  addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions
+  ) {
+    // Implementación básica para compatibilidad
+  }
+
+  removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | EventListenerOptions
+  ) {
+    // Implementación básica para compatibilidad
+  }
+
+  dispatchEvent(event: Event): boolean {
+    return true;
   }
 }
 

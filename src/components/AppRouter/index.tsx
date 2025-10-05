@@ -6,10 +6,10 @@ import {
   Navigate,
 } from "react-router-dom";
 import { useAppContext } from "../../context/AppContext";
-import LoginPage from "../../views/LoginPage";
-import Dashboard from "../../views/Dashboard";
-import RealTimeData from "../../views/RealTimeData";
-import AdminPanel from "../../views/AdminPanel";
+import LoginPage from "../../pages/LoginPage";
+import Dashboard from "../../pages/Dashboard";
+import RealTimeData from "../../pages/RealTimeData";
+import AdminPanel from "../../pages/AdminPanel";
 
 // Componente para proteger rutas que requieren autenticación
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
