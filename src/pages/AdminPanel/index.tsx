@@ -10,17 +10,19 @@ import {
   Toolbar,
   Typography,
   Chip,
+  Button,
 } from "@mui/material";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import LogoutIcon from "@mui/icons-material/Logout";
 import PersonIcon from "@mui/icons-material/Person";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
+import DashboardIcon from "@mui/icons-material/Dashboard";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { useNavigate } from "react-router-dom";
 import TowerInfoForm from "../../components/Tabs/TowerInfoForm";
 import WiFiForm from "../../components/Tabs/WiFiForm";
 import UsersForm from "../../components/Tabs/UsersForm";
 // import CellsForm from "../components/Tabs/CellsForm";
-import LoginForm from "../../components/Auth/LoginForm";
 import { useAppContext } from "../../context/AppContext";
 import { toast } from "react-toastify";
 
@@ -51,23 +53,19 @@ const AdminPanel = () => {
     });
   };
 
-  // Si el usuario no está logueado, mostramos el LoginForm
-  if (!loggedIn) {
-    return (
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          height: "70vh",
-        }}
-      >
-        <LoginForm />
-      </Box>
-    );
-  }
+  const handleNavigateToDashboard = () => {
+    try {
+      console.log("🚀 Navegando al dashboard desde AdminPanel...");
+      navigate("/dashboard", { replace: true });
+    } catch (error) {
+      console.error("❌ Error navegando al dashboard:", error);
+      // Fallback robusto
+      window.location.href = "/dashboard";
+    }
+  };
 
-  // Si el usuario está logueado, mostramos las tabs y el menú de logout
+  // El componente AdminPanel renderiza directamente el contenido
+  // La protección de rutas se maneja en AppRouter con AdminRoute
   return (
     <Box
       sx={{
@@ -95,11 +93,31 @@ const AdminPanel = () => {
             : "1px solid rgba(255,255,255,0.2)",
         }}
       >
-        <Toolbar>
+        <Toolbar sx={{ px: { xs: 2, sm: 3 } }}>
+          {/* Botón de navegación al Dashboard */}
+          <IconButton
+            edge="start"
+            onClick={handleNavigateToDashboard}
+            sx={{
+              mr: 2,
+              color: "text.primary",
+              bgcolor: darkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
+              "&:hover": {
+                bgcolor: darkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)",
+                transform: "scale(1.05)",
+              },
+              transition: "all 0.2s ease",
+            }}
+          >
+            <ArrowBackIcon />
+          </IconButton>
+
           <Box
             sx={{ display: "flex", alignItems: "center", gap: 2, flexGrow: 1 }}
           >
-            <Typography variant="h6">Panel de Administrador</Typography>
+            <Typography variant="h6" sx={{ fontSize: { xs: "1.1rem", sm: "1.25rem" } }}>
+              Panel de Administrador
+            </Typography>
 
             {/* Información del usuario */}
             <Chip
@@ -110,7 +128,9 @@ const AdminPanel = () => {
               sx={{
                 color: "white",
                 borderColor: "white",
+                fontSize: { xs: "0.7rem", sm: "0.8rem" },
                 "& .MuiChip-icon": { color: "white" },
+                display: { xs: "none", md: "flex" }, // Ocultar en móviles muy pequeños
               }}
             />
           </Box>
@@ -124,6 +144,10 @@ const AdminPanel = () => {
             open={Boolean(anchorEl)}
             onClose={handleMenuClose}
           >
+            <MenuItem onClick={handleNavigateToDashboard}>
+              <DashboardIcon sx={{ mr: 1 }} />
+              Ir al Dashboard
+            </MenuItem>
             <MenuItem onClick={handleLogout}>
               <LogoutIcon sx={{ mr: 1 }} />
               Cerrar Sesión

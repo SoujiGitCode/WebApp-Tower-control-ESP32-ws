@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Box,
   Grid,
@@ -204,11 +204,14 @@ const Dashboard = () => {
   const [devicesConfig, setDevicesConfig] = useState<DeviceThresholdConfig[] | null>(null);
   const [devicesInfo, setDevicesInfo] = useState<Device[] | null>(null); // Info básica de devices desde API
   const [realTimeData, setRealTimeData] = useState<{ [deviceId: number]: Device } | null>(null); // Datos WS por device
-  const [loadingDevices, setLoadingDevices] = useState(true); // Loading para devices desde API
+  const [loadingDevices, setLoadingDevices] = useState(false); // Cambiar a false inicialmente
   const [loadingWS, setLoadingWS] = useState(true); // Loading para WebSocket
   const [error, setError] = useState<string | null>(null);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
+  
+  // Ref para evitar llamadas duplicadas
+  const isLoadingRef = useRef(false);
 
   // Manejar menú
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
@@ -251,66 +254,83 @@ const Dashboard = () => {
 
   // Cargar devices desde la API para renderizado inmediato
   const loadDevicesFromAPI = async () => {
-    // Evitar llamadas duplicadas
-    if (loadingDevices) {
+    // Prevenir llamadas duplicadas con ref
+    if (isLoadingRef.current) {
       console.log("🔄 Ya hay una carga en progreso, omitiendo...");
       return;
     }
     
+    isLoadingRef.current = true;
     setLoadingDevices(true);
     setError(null);
     
     try {
-      console.log("🔍 Cargando devices desde API...");
+      console.log("🔍 Cargando devices desde API thresholds...");
       const response = await currentApi.getDevicesStatus();
       
       if (response.status === "success" && response.data) {
-        console.log("✅ Devices cargados desde API:", response.data);
+        console.log("✅ Devices cargados desde thresholds:", response.data);
         
-        // Extraer solo la información básica de los devices
-        const basicDevices: Device[] = response.data.devices.map(config => ({
+        // Crear devices basándose SOLO en los thresholds configurados
+        const devicesFromThresholds: Device[] = response.data.devices.map(config => ({
           id: config.device_id,
-          unit_symbol: "N", // Default, se actualizará con WS
-          unit_name: "Newton", // Default, se actualizará con WS  
+          unit_symbol: "N", // Default hasta que lleguen datos del WS
+          unit_name: "Newton", // Default hasta que lleguen datos del WS  
           Norte: 0, // Se mostrarán como loading hasta obtener datos del WS
           Sur: 0,
           Este: 0,
           Oeste: 0
         }));
         
-        setDevicesInfo(basicDevices);
+        setDevicesInfo(devicesFromThresholds);
         setDevicesConfig(response.data.devices);
+        console.log(`📊 ${devicesFromThresholds.length} devices configurados y listos para mostrar`);
       } else {
         console.warn("⚠️ No se pudieron cargar devices:", response.message);
-        setError("No se pudieron cargar los dispositivos");
+        setError("No se pudieron cargar los dispositivos configurados");
       }
     } catch (error) {
       console.error("❌ Error cargando devices desde API:", error);
       setError("Error al cargar dispositivos");
     } finally {
-      // Quitar el loading inmediatamente después de obtener la lista de devices
-      // No esperar al WebSocket
       setLoadingDevices(false);
+      isLoadingRef.current = false;
     }
   };
 
   // Cargar configuración inicial de thresholds y devices
   useEffect(() => {
-    // Solo cargar si tenemos usuario y no tenemos devices ya cargados
-    if (currentUser && !devicesInfo) {
+    console.log("🎯 useEffect evaluando:", {
+      currentUser: !!currentUser,
+      devicesInfo: !!devicesInfo,
+      isLoadingRef: isLoadingRef.current
+    });
+    
+    // Solo cargar si tenemos usuario y no hemos cargado ya
+    if (currentUser && !devicesInfo && !isLoadingRef.current) {
       console.log("🚀 Iniciando carga inicial de devices...");
       loadDevicesFromAPI();
     }
-  }, [currentUser]); // Dependencias simplificadas
+  }, [currentUser]); // Solo depender de currentUser
 
   // Conectar WebSocket para obtener datos en tiempo real
   useEffect(() => {
     let ws: any = null;
     let reconnectTimeout: number | null = null;
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT_ATTEMPTS = 3; // Límite de reintentos
 
     const connectWebSocket = () => {
+      // No intentar reconectar si ya agotamos los intentos
+      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        console.log(`🚫 Máximo de ${MAX_RECONNECT_ATTEMPTS} intentos de reconexión alcanzado`);
+        setLoadingWS(false);
+        return;
+      }
+
       try {
         setLoadingWS(true);
+        reconnectAttempts++;
 
         // Usar la IP configurada en devMode o la IP por defecto
         ws = currentApi.createWebSocketConnection(
@@ -320,6 +340,7 @@ const Dashboard = () => {
         ws.onopen = () => {
           console.log("🔌 Dashboard WebSocket conectado");
           setLoadingWS(false);
+          reconnectAttempts = 0; // Reset attempts on successful connection
         };
 
         ws.onmessage = (event) => {
@@ -331,19 +352,20 @@ const Dashboard = () => {
             }
 
             const data = JSON.parse(event.data) as DevicesData;
+            console.log("📡 Datos WebSocket recibidos:", data);
             
-            // Convertir array de devices en objeto indexado por ID para fácil acceso
+            // Solo actualizar datos en tiempo real para devices ya configurados
             const deviceMap: { [deviceId: number]: Device } = {};
             data.devices.forEach(device => {
-              deviceMap[device.id] = device;
+              // Solo incluir devices que ya tenemos configurados en thresholds
+              const isConfigured = devicesConfig?.some(config => config.device_id === device.id);
+              if (isConfigured) {
+                deviceMap[device.id] = device;
+              }
             });
             
             setRealTimeData(deviceMap);
-            
-            // También actualizar la info básica de units si no la tenemos
-            if (!devicesInfo || devicesInfo.length === 0) {
-              setDevicesInfo(data.devices);
-            }
+            console.log(`🔄 Actualizados ${Object.keys(deviceMap).length} devices con datos en tiempo real`);
           } catch (err) {
             console.warn("⚠️ Error parseando datos WebSocket (probablemente mensaje no-JSON):", event.data);
           }
@@ -353,9 +375,9 @@ const Dashboard = () => {
           console.log("🔌 Dashboard WebSocket desconectado");
           setLoadingWS(false);
           
-          // En modo desarrollo, no intentar reconectar
-          if (!devMode && !reconnectTimeout) {
-            console.log("🔄 Reintentando conexión WebSocket en 5 segundos...");
+          // Solo reintentar si no estamos en devMode y no hemos agotado los intentos
+          if (!devMode && reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !reconnectTimeout) {
+            console.log(`🔄 Reintentando conexión WebSocket (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}) en 5 segundos...`);
             reconnectTimeout = window.setTimeout(() => {
               reconnectTimeout = null;
               connectWebSocket();
@@ -364,12 +386,12 @@ const Dashboard = () => {
         };
 
         ws.onerror = (error) => {
-          console.warn("🔌 WebSocket error (normal en devMode):", error);
+          console.warn("🔌 WebSocket error:", error);
           setLoadingWS(false);
           
-          // En devMode o si no tenemos devices, no mostrar error
-          if (!devMode && (!devicesInfo || devicesInfo.length === 0)) {
-            setError("Error de conexión con el servidor WebSocket");
+          // Solo mostrar error si es crítico y no estamos en devMode
+          if (!devMode && reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            setError("No se pudo conectar al servidor WebSocket después de varios intentos");
           }
         };
 
@@ -377,16 +399,13 @@ const Dashboard = () => {
       } catch (err) {
         console.warn("⚠️ Error creando conexión WebSocket:", err);
         setLoadingWS(false);
-        
-        // Solo mostrar error si es crítico y no estamos en devMode
-        if (!devMode && (!devicesInfo || devicesInfo.length === 0)) {
-          setError("No se pudo conectar al servidor WebSocket");
-        }
+        reconnectAttempts++;
       }
     };
 
-    // Solo intentar WebSocket si tenemos usuario autenticado
-    if (currentUser) {
+    // Solo intentar WebSocket si tenemos usuario autenticado y devices configurados
+    if (currentUser && devicesConfig && devicesConfig.length > 0) {
+      console.log("🚀 Iniciando conexión WebSocket para obtener datos en tiempo real...");
       connectWebSocket();
     }
 
@@ -398,7 +417,7 @@ const Dashboard = () => {
         ws.close();
       }
     };
-  }, [currentApi, devMode, esp32IP, currentUser]);
+  }, [currentApi, devMode, esp32IP, currentUser, devicesConfig]); // Agregamos devicesConfig como dependencia
 
   return (
     <Box sx={{ height: "100vh", display: "flex", flexDirection: "column" }}>
@@ -473,13 +492,13 @@ const Dashboard = () => {
           </Alert>
         )}
 
-        {/* Mostrar devices tan pronto como los tengamos de la API */}
+        {/* Mostrar devices basándose SIEMPRE en los thresholds configurados */}
         {devicesInfo && devicesInfo.length > 0 && (
           <>
             {/* Header con estadísticas */}
             <Box sx={{ mb: 3 }}>
               <Typography variant="h4" gutterBottom>
-                Dispositivos Activos
+                Dispositivos Configurados
               </Typography>
               <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                 <Typography variant="body1" color="text.secondary">
@@ -489,13 +508,13 @@ const Dashboard = () => {
                   <>
                     <CircularProgress size={16} />
                     <Typography variant="body2" color="text.secondary">
-                      Conectando datos en tiempo real...
+                      Obteniendo datos en tiempo real...
                     </Typography>
                   </>
                 )}
-                {realTimeData && !loadingWS && (
+                {realTimeData && Object.keys(realTimeData).length > 0 && !loadingWS && (
                   <Typography variant="body2" color="success.main">
-                    • Datos en tiempo real activos
+                    • {Object.keys(realTimeData).length} dispositivos con datos en tiempo real
                   </Typography>
                 )}
               </Box>
@@ -505,7 +524,7 @@ const Dashboard = () => {
             <Grid container spacing={3}>
               {devicesInfo.map((device) => {
                 const deviceConfig = devicesConfig?.find(config => config.device_id === device.id);
-                // Combinar datos básicos con datos en tiempo real si están disponibles
+                // Si tenemos datos en tiempo real, usarlos; sino usar datos básicos
                 const deviceWithRealTimeData = realTimeData?.[device.id] || device;
                 
                 return (

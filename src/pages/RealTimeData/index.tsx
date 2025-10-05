@@ -13,6 +13,7 @@ import {
   Alert,
   Tabs,
   Tab,
+  Button,
 } from "@mui/material";
 import {
   ArrowBack as BackIcon,
@@ -40,15 +41,17 @@ const RealTimeData = () => {
   const location = useLocation();
   const { darkMode, currentApi, devMode, esp32IP, isAdmin } = useAppContext();
 
+  // Estados optimizados para mejor rendimiento mobile
   const [devicesData, setDevicesData] = useState<Device[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Cambiar a false para carga no bloqueante
   const [error, setError] = useState<string | null>(null);
   const [wsConnection, setWsConnection] = useState<any>(null);
   const [chartType, setChartType] = useState<ChartType>("circles");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [isNavigating, setIsNavigating] = useState(false); // Flag para controlar navegación
-  const [isRequiredSetup, setIsRequiredSetup] = useState(false); // Modal obligatorio
-  const [hasCheckedThresholds, setHasCheckedThresholds] = useState(false); // Evitar múltiples verificaciones
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [isRequiredSetup, setIsRequiredSetup] = useState(false);
+  const [hasCheckedThresholds, setHasCheckedThresholds] = useState(false);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false); // Nuevo estado
   const [deviceConfig, setDeviceConfig] = useState<DeviceThresholdConfig | undefined>(
     location.state?.deviceConfig
   );
@@ -103,43 +106,40 @@ const RealTimeData = () => {
     setIsRequiredSetup(false); // Ya no es configuración obligatoria después de guardar
   };
 
-  // Verificar si existen thresholds para este dispositivo
+  // Verificar si existen thresholds para este dispositivo (simplificado)
   const checkDeviceThresholds = async () => {
-    if (hasCheckedThresholds || !isAdmin) {
-      console.log(`🔍 Saltando verificación de thresholds - hasChecked: ${hasCheckedThresholds}, isAdmin: ${isAdmin}`);
+    if (hasCheckedThresholds || !isAdmin || isNavigating) {
       return; // Solo verificar una vez y solo para admins
     }
     
     try {
-      console.log(`🔍 ===== INICIANDO VERIFICACIÓN DE THRESHOLDS PARA DEVICE ${deviceId} =====`);
+      console.log(`🔍 Verificando thresholds para device ${deviceId}...`);
+      
+      // Marcar como verificado inmediatamente para evitar múltiples llamadas
+      setHasCheckedThresholds(true);
+      
       const response = await currentApi.getThresholds();
-      console.log(`📋 Respuesta completa de thresholds:`, response);
       
       if (response.status === 'success' && response.data) {
-        // Manejo flexible de la estructura de respuesta
-        let thresholds: any[] = [];
-        
-        if (Array.isArray(response.data)) {
-          thresholds = response.data;
-        } else if ((response.data as any).thresholds && Array.isArray((response.data as any).thresholds)) {
-          thresholds = (response.data as any).thresholds;
-        } else {
-          console.warn(`⚠️ Estructura de respuesta inesperada:`, response.data);
-        }
+        // Manejo simple de la estructura de respuesta
+        let thresholds: any[] = Array.isArray(response.data) 
+          ? response.data 
+          : (response.data as any).thresholds || [];
         
         const deviceThreshold = thresholds.find(threshold => threshold.device_id === Number(deviceId));
         
         if (!deviceThreshold) {
-          console.log(`⚠️ ===== NO THRESHOLDS ENCONTRADOS - ABRIENDO MODAL =====`);
-          setIsRequiredSetup(true);
-          setSettingsOpen(true);
+          console.log(`⚠️ No se encontraron thresholds para device ${deviceId}`);
+          // Solo abrir modal si no estamos navegando
+          if (!isNavigating) {
+            setIsRequiredSetup(true);
+            setSettingsOpen(true);
+          }
         } else {
-          console.log(`✅ ===== THRESHOLDS ENCONTRADOS =====`);
-          console.log(`📊 Threshold data:`, deviceThreshold);
+          console.log(`✅ Thresholds encontrados para device ${deviceId}`);
           
-          // Si no tenemos deviceConfig desde location.state, usar los datos de la API
+          // Solo crear config si no la tenemos
           if (!deviceConfig) {
-            console.log(`📝 ===== CREANDO DEVICE CONFIG DESDE API =====`);
             const configFromAPI: DeviceThresholdConfig = {
               device_id: deviceThreshold.device_id,
               active: deviceThreshold.active,
@@ -156,86 +156,60 @@ const RealTimeData = () => {
                 time_high_high: deviceThreshold.time_high_high || 30,
               },
             };
-            console.log(`🔧 ===== CONFIGURACIÓN FINAL CARGADA =====`, configFromAPI);
             setDeviceConfig(configFromAPI);
-          } else {
-            console.log(`✅ ===== DEVICE CONFIG YA ESTABA CARGADO =====`);
           }
         }
       } else {
-        console.warn('⚠️ ===== ERROR EN RESPUESTA DE THRESHOLDS =====', response.message);
-        // En caso de error, abrir modal obligatorio por seguridad
+        console.warn('⚠️ Error en respuesta de thresholds:', response.message);
+        // Solo mostrar modal en caso de error si no estamos navegando
+        if (!isNavigating) {
+          setIsRequiredSetup(true);
+          setSettingsOpen(true);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error verificando thresholds:', error);
+      // En caso de error, no bloquear la aplicación
+      // Solo mostrar modal si es crítico y no estamos navegando
+      if (!isNavigating && !deviceConfig) {
         setIsRequiredSetup(true);
         setSettingsOpen(true);
       }
-    } catch (error) {
-      console.error('❌ ===== ERROR VERIFICANDO THRESHOLDS =====', error);
-      // En caso de error, abrir modal obligatorio por seguridad
-      setIsRequiredSetup(true);
-      setSettingsOpen(true);
-    } finally {
-      console.log(`🏁 ===== VERIFICACIÓN DE THRESHOLDS COMPLETADA =====`);
-      setHasCheckedThresholds(true);
     }
   };
 
-  // Función para navegar de forma segura al dashboard
+  // Función optimizada para navegar al dashboard (especialmente para móviles)
   const handleNavigateToHome = () => {
     if (isNavigating) return; // Evitar navegaciones múltiples
     
-    console.log("🚀 Iniciando navegación al dashboard...");
+    console.log("🚀 Iniciando navegación optimizada al dashboard...");
     
     try {
       setIsNavigating(true);
       
-      // Cerrar conexión WebSocket si existe
+      // Limpiar inmediatamente para móviles
       if (wsConnection) {
-        console.log("🔌 Cerrando WebSocket antes de navegar...");
         wsConnection.close();
         setWsConnection(null);
       }
       
-      // Limpiar estados
-      setLoading(false);
+      // Limpiar estados para liberar memoria en móviles
+      setDevicesData([]);
       setError(null);
+      setLoading(false);
       
-      console.log("🧹 Estados limpiados, navegando en 100ms...");
-      
-      // Pequeño delay para asegurar que el cleanup se complete
-      setTimeout(() => {
-        console.log("🎯 Ejecutando window.location.assign('/dashboard')");
-        // Usar window.location.assign para forzar navegación completa
-        // Esto garantiza que el componente se desmonte completamente
-        window.location.assign("/dashboard");
-      }, 100);
-    } catch (error) {
-      console.error("❌ Error durante la navegación:", error);
-      // Forzar navegación aunque haya errores
-      window.location.href = "/dashboard";
-    }
-  };
-
-  // Función alternativa usando React Router con key para forzar re-render
-  const handleNavigateToHomeReact = () => {
-    if (isNavigating) return;
-    
-    try {
-      setIsNavigating(true);
-      
-      // Cerrar conexión WebSocket si existe
-      if (wsConnection) {
-        wsConnection.close();
-        setWsConnection(null);
-      }
-      
-      // Navegar usando React Router con replace
+      // Usar React Router de forma directa para mejor rendimiento
       navigate("/dashboard", { 
         replace: true,
-        state: { forceRefresh: Date.now() } // Añadir timestamp para forzar re-render
+        state: { 
+          timestamp: Date.now(),
+          fromDevice: deviceId 
+        }
       });
+      
     } catch (error) {
-      console.error("Error durante la navegación con React Router:", error);
-      // Fallback a navegación nativa
+      console.error("❌ Error durante la navegación:", error);
+      // Fallback robusto para móviles
       window.location.href = "/dashboard";
     }
   };
@@ -338,19 +312,22 @@ const RealTimeData = () => {
     }
   };
 
-  // Conectar WebSocket
+  // Conectar WebSocket de forma no bloqueante
   useEffect(() => {
     if (isNavigating) return; // No hacer nada si estamos navegando
     
     let ws: any = null;
+    let reconnectTimeout: number | null = null;
 
-    const connectWebSocket = () => {
+    const connectWebSocket = async () => {
       if (isNavigating) return; // Verificar nuevamente
       
       try {
-        setLoading(true);
+        // NO bloquear la carga inicial - comenzar sin loading
         setError(null);
 
+        console.log("🔌 Intentando conectar WebSocket...");
+        
         ws = currentApi.createWebSocketConnection(
           devMode ? esp32IP : undefined
         );
@@ -358,54 +335,82 @@ const RealTimeData = () => {
         ws.onopen = () => {
           if (isNavigating) return; // No procesar si estamos navegando
           console.log("🔌 RealTimeData WebSocket conectado");
-          setLoading(false);
+          setLoading(false); // Solo quitar loading cuando se conecte exitosamente
         };
 
         ws.onmessage = (event: MessageEvent) => {
           if (isNavigating) return; // No procesar si estamos navegando
           try {
             const data = JSON.parse(event.data) as DevicesData;
-            setDevicesData(data.devices);
+            if (data && data.devices && Array.isArray(data.devices)) {
+              setDevicesData(data.devices);
+              setLoading(false); // Datos recibidos, ya no está cargando
+              setInitialLoadComplete(true); // Marcar carga inicial como completa
+              setError(null); // Limpiar cualquier error previo
+            }
           } catch (err) {
             console.error("Error parseando datos WebSocket:", err);
+            // No mostrar error por este problema de parsing
           }
         };
 
         ws.onclose = () => {
           console.log("🔌 RealTimeData WebSocket desconectado");
           setWsConnection(null);
+          
+          // Intentar reconectar después de 2 segundos si no estamos navegando
           if (!isNavigating) {
-            setLoading(false);
+            console.log("🔄 Programando reconexión en 2 segundos...");
+            reconnectTimeout = setTimeout(() => {
+              if (!isNavigating) {
+                connectWebSocket();
+              }
+            }, 2000);
           }
         };
 
         ws.onerror = (error: Event) => {
           console.error("🔌 Error en RealTimeData WebSocket:", error);
+          
+          // En modo desarrollo, no mostrar error de conexión
           if (!devMode && !isNavigating) {
-            setError("Error de conexión con el servidor");
+            // Solo mostrar error después de varios intentos fallidos
+            setTimeout(() => {
+              if (!devicesData.length && !isNavigating && !initialLoadComplete) {
+                setError("Error de conexión con el servidor. Verificando...");
+              }
+            }, 8000); // Aumentar a 8 segundos para móviles lentos
           }
+          
           setWsConnection(null);
-          if (!isNavigating) {
-            setLoading(false);
-          }
+          setLoading(false); // No bloquear la UI por errores de conexión
         };
 
         setWsConnection(ws);
       } catch (err) {
         console.error("Error creando conexión WebSocket:", err);
+        
+        // No bloquear la UI, solo mostrar en consola
         if (!devMode && !isNavigating) {
-          setError("No se pudo conectar al servidor");
+          setTimeout(() => {
+            if (!devicesData.length && !isNavigating && !initialLoadComplete) {
+              setError("No se pudo conectar al servidor");
+            }
+          }, 5000); // 5 segundos para móviles
         }
+        
         setWsConnection(null);
-        if (!isNavigating) {
-          setLoading(false);
-        }
+        setLoading(false);
       }
     };
 
+    // Conectar inmediatamente, sin demora
     connectWebSocket();
 
     return () => {
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
       if (ws) {
         ws.close();
         setWsConnection(null);
@@ -442,16 +447,45 @@ const RealTimeData = () => {
     };
   }, []);
 
-  // Verificar thresholds INMEDIATAMENTE al cargar el componente (primera prioridad)
+  // Timeout de seguridad para móviles - mostrar contenido aunque no lleguen datos
+  useEffect(() => {
+    const fallbackTimeout = setTimeout(() => {
+      if (!initialLoadComplete && !isNavigating) {
+        console.log("⏰ Timeout de seguridad: mostrando interfaz sin datos");
+        setInitialLoadComplete(true);
+        setLoading(false);
+        
+        // Si no hay datos después del timeout, mostrar dispositivo mock para evitar crash
+        if (devicesData.length === 0 && deviceId) {
+          const mockDevice: Device = {
+            id: Number(deviceId),
+            unit_name: `Torre ${deviceId}`,
+            Norte: 0,
+            Sur: 0,
+            Este: 0,
+            Oeste: 0,
+            online: false
+          };
+          setDevicesData([mockDevice]);
+        }
+      }
+    }, 10000); // 10 segundos máximo de espera para móviles
+
+    return () => clearTimeout(fallbackTimeout);
+  }, [initialLoadComplete, isNavigating, devicesData.length, deviceId]);
   useEffect(() => {
     // Solo verificar si es admin, no estamos navegando y no hemos verificado aún
     if (isAdmin && !isNavigating && !hasCheckedThresholds && deviceId) {
-      console.log(`🔍 PRIORIDAD: Verificando thresholds ANTES que WebSocket para device ${deviceId}...`);
-      
-      // Ejecutar inmediatamente, sin timeout
-      checkDeviceThresholds();
+      // Ejecutar después de un pequeño delay para no bloquear la carga inicial
+      const timeoutId = setTimeout(() => {
+        if (!isNavigating) {
+          checkDeviceThresholds();
+        }
+      }, 500); // Pequeño delay de 500ms
+
+      return () => clearTimeout(timeoutId);
     }
-  }, [isAdmin, isNavigating, hasCheckedThresholds, deviceId]); // Ejecutar tan pronto como tengamos deviceId
+  }, [isAdmin, isNavigating, hasCheckedThresholds, deviceId]);
 
   // Verificar thresholds automáticamente al cargar el componente (DEPRECADO - movido arriba)
   // useEffect(() => {
@@ -479,7 +513,8 @@ const RealTimeData = () => {
     }
   }, [location.pathname, deviceId, wsConnection]);
 
-  if (loading || (!currentDevice && devicesData.length === 0)) {
+  // Mostrar loading solo si realmente no tenemos datos y estamos cargando
+  if (loading && !initialLoadComplete && devicesData.length === 0) {
     return (
       <Box
         sx={{
@@ -490,25 +525,41 @@ const RealTimeData = () => {
           background: darkMode
             ? "linear-gradient(135deg, #1e293b 0%, #334155 30%, #475569 70%, #64748b 100%)"
             : "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #cbd5e1 100%)",
+          p: { xs: 2, sm: 3 }
         }}
       >
-        <Box sx={{ textAlign: "center" }}>
+        <Box sx={{ textAlign: "center", maxWidth: 400 }}>
           <CircularProgress
             size={60}
             sx={{ color: darkMode ? "#60a5fa" : "#3b82f6", mb: 3 }}
           />
           <Typography
             variant="h6"
-            sx={{ color: "text.primary", fontWeight: 500 }}
+            sx={{ 
+              color: "text.primary", 
+              fontWeight: 500,
+              fontSize: { xs: '1.1rem', sm: '1.25rem' },
+              mb: 1
+            }}
           >
             Cargando datos en tiempo real...
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{ 
+              color: "text.secondary",
+              fontSize: { xs: '0.9rem', sm: '1rem' }
+            }}
+          >
+            Conectando con el dispositivo #{deviceId}
           </Typography>
         </Box>
       </Box>
     );
   }
 
-  if (error) {
+  // Mejorar manejo de errores para móviles
+  if (error && !devicesData.length && initialLoadComplete) {
     return (
       <Box
         sx={{
@@ -519,20 +570,40 @@ const RealTimeData = () => {
           background: darkMode
             ? "linear-gradient(135deg, #1e293b 0%, #334155 30%, #475569 70%, #64748b 100%)"
             : "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #cbd5e1 100%)",
-          p: 3,
+          p: { xs: 2, sm: 3 },
         }}
       >
-        <Alert severity="error" sx={{ maxWidth: 400, borderRadius: 2 }}>
-          <Typography variant="h6" sx={{ mb: 1 }}>
+        <Alert 
+          severity="error" 
+          sx={{ 
+            maxWidth: { xs: '100%', sm: 400 }, 
+            borderRadius: 2,
+            width: '100%'
+          }}
+          action={
+            <Button 
+              color="inherit" 
+              size="small" 
+              onClick={() => window.location.reload()}
+              sx={{ mt: 1 }}
+            >
+              Reintentar
+            </Button>
+          }
+        >
+          <Typography variant="h6" sx={{ mb: 1, fontSize: { xs: '1rem', sm: '1.125rem' } }}>
             Error de Conexión
           </Typography>
-          {error}
+          <Typography variant="body2" sx={{ fontSize: { xs: '0.85rem', sm: '0.9rem' } }}>
+            {error}
+          </Typography>
         </Alert>
       </Box>
     );
   }
 
-  if (!currentDevice && devicesData.length > 0) {
+  // Manejo mejorado cuando no se encuentra el dispositivo
+  if (initialLoadComplete && !currentDevice && devicesData.length > 0) {
     return (
       <Box
         sx={{
@@ -543,15 +614,79 @@ const RealTimeData = () => {
           background: darkMode
             ? "linear-gradient(135deg, #1e293b 0%, #334155 30%, #475569 70%, #64748b 100%)"
             : "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #cbd5e1 100%)",
-          p: 3,
+          p: { xs: 2, sm: 3 },
         }}
       >
-        <Alert severity="warning" sx={{ maxWidth: 400, borderRadius: 2 }}>
-          <Typography variant="h6" sx={{ mb: 1 }}>
+        <Alert 
+          severity="warning" 
+          sx={{ 
+            maxWidth: { xs: '100%', sm: 400 }, 
+            borderRadius: 2,
+            width: '100%'
+          }}
+          action={
+            <Button 
+              color="inherit" 
+              size="small" 
+              onClick={() => navigate('/dashboard')}
+              sx={{ mt: 1 }}
+            >
+              Volver al Dashboard
+            </Button>
+          }
+        >
+          <Typography variant="h6" sx={{ mb: 1, fontSize: { xs: '1rem', sm: '1.125rem' } }}>
             Dispositivo No Encontrado
           </Typography>
-          No se pudo encontrar el dispositivo con ID: {deviceId}
+          <Typography variant="body2" sx={{ fontSize: { xs: '0.85rem', sm: '0.9rem' } }}>
+            No se pudo encontrar el dispositivo con ID: {deviceId}
+          </Typography>
         </Alert>
+      </Box>
+    );
+  }
+
+  // Solo definir las fuerzas si tenemos un dispositivo válido
+  if (!currentDevice) {
+    return (
+      <Box
+        sx={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: darkMode
+            ? "linear-gradient(135deg, #1e293b 0%, #334155 30%, #475569 70%, #64748b 100%)"
+            : "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #cbd5e1 100%)",
+          p: { xs: 2, sm: 3 },
+        }}
+      >
+        <Box sx={{ textAlign: "center", maxWidth: 400 }}>
+          <CircularProgress
+            size={60}
+            sx={{ color: darkMode ? "#60a5fa" : "#3b82f6", mb: 3 }}
+          />
+          <Typography
+            variant="h6"
+            sx={{ 
+              color: "text.primary", 
+              fontWeight: 500,
+              fontSize: { xs: '1.1rem', sm: '1.25rem' },
+              mb: 1
+            }}
+          >
+            Cargando dispositivo...
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{ 
+              color: "text.secondary",
+              fontSize: { xs: '0.9rem', sm: '1rem' }
+            }}
+          >
+            Buscando dispositivo #{deviceId}
+          </Typography>
+        </Box>
       </Box>
     );
   }

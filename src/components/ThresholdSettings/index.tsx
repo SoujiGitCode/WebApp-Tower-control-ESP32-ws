@@ -14,6 +14,8 @@ import {
   Alert,
   Divider,
   Chip,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
@@ -43,6 +45,8 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
   isRequiredSetup = false, // Por defecto no es obligatorio
 }) => {
   const { currentApi, devMode } = useAppContext();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState(true);
   const [thresholds, setThresholds] = useState<ThresholdValues>({
@@ -67,8 +71,33 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
   }, [deviceConfig, deviceId]);
 
   const handleThresholdChange = (field: keyof ThresholdValues, value: string) => {
-    const numValue = parseFloat(value) || 0;
+    // Permitir solo números, puntos decimales y eliminar caracteres no válidos
+    const cleanValue = value.replace(/[^0-9.]/g, '');
+    
+    // Evitar múltiples puntos decimales
+    const parts = cleanValue.split('.');
+    const formattedValue = parts.length > 2 
+      ? parts[0] + '.' + parts.slice(1).join('') 
+      : cleanValue;
+    
+    // Actualizar el estado con el valor de texto limpio
+    const numValue = parseFloat(formattedValue) || 0;
     setThresholds(prev => ({ ...prev, [field]: numValue }));
+  };
+
+  const handleTimeToAlarmChange = (value: string) => {
+    // Permitir solo números enteros para tiempo
+    const cleanValue = value.replace(/[^0-9]/g, '');
+    const numValue = parseInt(cleanValue) || 30;
+    
+    // Limitar entre 5 y 300 segundos
+    if (numValue >= 5 && numValue <= 300) {
+      setTimeToAlarm(numValue);
+    } else if (numValue < 5) {
+      setTimeToAlarm(5);
+    } else if (numValue > 300) {
+      setTimeToAlarm(300);
+    }
   };
 
   const validateThresholds = (): boolean => {
@@ -157,18 +186,34 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
       onClose={isRequiredSetup ? undefined : onClose} // No cerrable si es configuración obligatoria
       maxWidth="md" 
       fullWidth
+      fullScreen={isMobile}
       disableEscapeKeyDown={isRequiredSetup} // No cerrar con ESC si es obligatorio
+      PaperProps={{
+        sx: {
+          borderRadius: { xs: 0, sm: 2 },
+          m: { xs: 0, sm: 2 },
+          height: { xs: '100vh', sm: 'auto' },
+          maxHeight: { xs: '100vh', sm: '90vh' }
+        }
+      }}
     >
-      <DialogTitle>
+      <DialogTitle sx={{ 
+        px: { xs: 2, sm: 3 },
+        py: { xs: 2, sm: 2 }
+      }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <SettingsIcon />
-          <Typography variant="h6">
+          <Typography variant="h6" sx={{ fontSize: { xs: '1.1rem', sm: '1.25rem' } }}>
             {isRequiredSetup ? 'Configuración Inicial Requerida' : 'Configuración de Thresholds'} - Device #{deviceId}
           </Typography>
         </Box>
       </DialogTitle>
 
-      <DialogContent>
+      <DialogContent sx={{ 
+        px: { xs: 2, sm: 3 },
+        py: { xs: 1, sm: 2 },
+        overflow: 'auto'
+      }}>
         <Box sx={{ mt: 2 }}>
           {/* Alerta de configuración obligatoria */}
           {isRequiredSetup && (
@@ -181,7 +226,7 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
           )}
 
           {/* Switch para activar/desactivar */}
-          <FormControlLabel
+          {/* <FormControlLabel
             control={
               <Switch
                 checked={active}
@@ -191,7 +236,7 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
             }
             label="Activar alertas para este dispositivo"
             sx={{ mb: 3 }}
-          />
+          /> */}
 
           {devMode && (
             <Alert severity="info" sx={{ mb: 3 }}>
@@ -200,7 +245,10 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
           )}
 
           {/* Configuración de Thresholds */}
-          <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
+          <Typography variant="h6" gutterBottom sx={{ 
+            mt: 3,
+            fontSize: { xs: '1.1rem', sm: '1.25rem' }
+          }}>
             Umbrales de Fuerza {isRequiredSetup && <Chip label="Valores Recomendados" color="info" size="small" />}
           </Typography>
           
@@ -216,17 +264,29 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
             </Alert>
           )}
           
-          <Grid container spacing={2}>
+          <Grid container spacing={{ xs: 2, sm: 2 }}>
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
                 label="Crítico Bajo (Low Low)"
-                type="number"
+                type="text"
                 value={thresholds.low_low}
                 onChange={(e) => handleThresholdChange('low_low', e.target.value)}
                 disabled={!active}
+                placeholder="Ej: 200"
+                inputProps={{
+                  inputMode: 'decimal',
+                  pattern: '[0-9]*[.]?[0-9]*',
+                  style: { fontSize: isMobile ? '16px' : '14px' } // Evita zoom en iOS
+                }}
                 InputProps={{
                   endAdornment: <Chip label="Crítico" color="error" size="small" />
+                }}
+                helperText="Solo números permitidos"
+                sx={{
+                  '& .MuiInputBase-root': {
+                    height: { xs: 56, sm: 56 }
+                  }
                 }}
               />
             </Grid>
@@ -234,12 +294,24 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
               <TextField
                 fullWidth
                 label="Advertencia Bajo (Low)"
-                type="number"
+                type="text"
                 value={thresholds.low}
                 onChange={(e) => handleThresholdChange('low', e.target.value)}
                 disabled={!active}
+                placeholder="Ej: 400"
+                inputProps={{
+                  inputMode: 'decimal',
+                  pattern: '[0-9]*[.]?[0-9]*',
+                  style: { fontSize: isMobile ? '16px' : '14px' }
+                }}
                 InputProps={{
                   endAdornment: <Chip label="Advertencia" color="warning" size="small" />
+                }}
+                helperText="Solo números permitidos"
+                sx={{
+                  '& .MuiInputBase-root': {
+                    height: { xs: 56, sm: 56 }
+                  }
                 }}
               />
             </Grid>
@@ -247,12 +319,24 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
               <TextField
                 fullWidth
                 label="Advertencia Alto (High)"
-                type="number"
+                type="text"
                 value={thresholds.high}
                 onChange={(e) => handleThresholdChange('high', e.target.value)}
                 disabled={!active}
+                placeholder="Ej: 1600"
+                inputProps={{
+                  inputMode: 'decimal',
+                  pattern: '[0-9]*[.]?[0-9]*',
+                  style: { fontSize: isMobile ? '16px' : '14px' }
+                }}
                 InputProps={{
                   endAdornment: <Chip label="Advertencia" color="warning" size="small" />
+                }}
+                helperText="Solo números permitidos"
+                sx={{
+                  '& .MuiInputBase-root': {
+                    height: { xs: 56, sm: 56 }
+                  }
                 }}
               />
             </Grid>
@@ -260,12 +344,24 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
               <TextField
                 fullWidth
                 label="Crítico Alto (High High)"
-                type="number"
+                type="text"
                 value={thresholds.high_high}
                 onChange={(e) => handleThresholdChange('high_high', e.target.value)}
                 disabled={!active}
+                placeholder="Ej: 2000"
+                inputProps={{
+                  inputMode: 'decimal',
+                  pattern: '[0-9]*[.]?[0-9]*',
+                  style: { fontSize: isMobile ? '16px' : '14px' }
+                }}
                 InputProps={{
                   endAdornment: <Chip label="Crítico" color="error" size="small" />
+                }}
+                helperText="Solo números permitidos"
+                sx={{
+                  '& .MuiInputBase-root': {
+                    height: { xs: 56, sm: 56 }
+                  }
                 }}
               />
             </Grid>
@@ -274,21 +370,31 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
           <Divider sx={{ my: 3 }} />
 
           {/* Configuración de Tiempo de Alarma */}
-          <Typography variant="h6" gutterBottom>
+          <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1.1rem', sm: '1.25rem' } }}>
             Tiempo para Activar Alarma
           </Typography>
           
-          <Grid container spacing={2}>
+          <Grid container spacing={{ xs: 2, sm: 2 }}>
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
                 label="Tiempo de Evaluación (segundos)"
-                type="number"
+                type="text"
                 value={timeToAlarm}
-                onChange={(e) => setTimeToAlarm(parseInt(e.target.value) || 30)}
+                onChange={(e) => handleTimeToAlarmChange(e.target.value)}
                 disabled={!active}
-                helperText="Tiempo que debe mantenerse el promedio en rango de alarma antes de activarla"
-                inputProps={{ min: 5, max: 300 }}
+                placeholder="Ej: 30"
+                inputProps={{
+                  inputMode: 'numeric',
+                  pattern: '[0-9]*',
+                  style: { fontSize: isMobile ? '16px' : '14px' }
+                }}
+                helperText="Tiempo que debe mantenerse el promedio en rango de alarma antes de activarla (5-300 seg)"
+                sx={{
+                  '& .MuiInputBase-root': {
+                    height: { xs: 56, sm: 56 }
+                  }
+                }}
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -332,10 +438,25 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
         </Box>
       </DialogContent>
 
-      <DialogActions>
+      <DialogActions sx={{
+        px: { xs: 2, sm: 3 },
+        py: { xs: 2, sm: 2 },
+        gap: { xs: 1, sm: 2 },
+        flexDirection: { xs: 'column', sm: 'row' },
+        alignItems: 'stretch'
+      }}>
         {/* Solo mostrar botón cancelar si NO es configuración obligatoria */}
         {!isRequiredSetup && (
-          <Button onClick={onClose} startIcon={<CancelIcon />}>
+          <Button 
+            onClick={onClose} 
+            startIcon={<CancelIcon />}
+            sx={{
+              py: { xs: 1.5, sm: 1 },
+              fontSize: { xs: '1rem', sm: '0.9rem' },
+              order: { xs: 2, sm: 1 },
+              minWidth: { xs: '100%', sm: 'auto' }
+            }}
+          >
             Cancelar
           </Button>
         )}
@@ -345,6 +466,17 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
           variant="contained"
           startIcon={<SaveIcon />}
           disabled={loading || !active}
+          sx={{
+            py: { xs: 1.5, sm: 1 },
+            fontSize: { xs: '1rem', sm: '0.9rem' },
+            fontWeight: 'bold',
+            order: { xs: 1, sm: 2 },
+            minWidth: { xs: '100%', sm: 'auto' },
+            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            '&:hover': {
+              background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+            }
+          }}
         >
           {loading 
             ? 'Guardando...' 
@@ -355,7 +487,12 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
         </Button>
         
         {isRequiredSetup && (
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ 
+            ml: { xs: 0, sm: 2 },
+            mt: { xs: 1, sm: 0 },
+            textAlign: { xs: 'center', sm: 'left' },
+            fontSize: { xs: '0.75rem', sm: '0.8rem' }
+          }}>
             * Debe guardar la configuración para continuar
           </Typography>
         )}
