@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -18,15 +18,17 @@ import {
   ArrowBack as BackIcon,
   Settings as SettingsIcon,
 } from "@mui/icons-material";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAppContext } from "../../context/AppContext";
-import { Device, DevicesData } from "../../api/index";
+import { Device, DevicesData, DeviceThresholdConfig } from "../../api/index";
+import useAlarmSystem from "../../hooks/useAlarmSystem";
 
 // Importar todos los componentes de visualización
 import { TowerView } from "../../components/RealTimeData/TowerView";
 import { RadarChart } from "@components/RealTimeData/RadarChart";
 import { GaugeChart } from "@components/RealTimeData/GaugeChart";
 import { HeatmapChart } from "@components/RealTimeData/HeatmapChart";
+import ThresholdSettings from "../../components/ThresholdSettings";
 // import BarChart from "../../components/RealTimeData/BarChart";
 
 // Tipo para las diferentes vistas disponibles
@@ -35,39 +37,316 @@ type ChartType = "circles" | "bar" | "radar" | "gauges" | "heatmap";
 const RealTimeData = () => {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
-  const { darkMode, currentApi, devMode, esp32IP } = useAppContext();
+  const location = useLocation();
+  const { darkMode, currentApi, devMode, esp32IP, isAdmin } = useAppContext();
 
   const [devicesData, setDevicesData] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [wsConnection, setWsConnection] = useState<any>(null);
   const [chartType, setChartType] = useState<ChartType>("circles");
-
-  const currentDevice = devicesData.find(
-    (device) => device.id === Number(deviceId)
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isNavigating, setIsNavigating] = useState(false); // Flag para controlar navegación
+  const [isRequiredSetup, setIsRequiredSetup] = useState(false); // Modal obligatorio
+  const [hasCheckedThresholds, setHasCheckedThresholds] = useState(false); // Evitar múltiples verificaciones
+  const [deviceConfig, setDeviceConfig] = useState<DeviceThresholdConfig | undefined>(
+    location.state?.deviceConfig
   );
 
-  const getCableColor = (force: number) => {
-    if (force < 1500) return "#22c55e";
-    if (force < 2000) return "#f59e0b";
-    return "#ef4444";
+  // Sistema de alarmas con configuración estable - SOLO si hay deviceConfig
+  const alarmSystemConfig = useMemo(() => {
+    // No inicializar el sistema de alarmas hasta tener deviceConfig
+    if (!deviceConfig || !hasCheckedThresholds) {
+      return null;
+    }
+    
+    // Calcular el interval basado en el tiempo más pequeño de thresholds
+    const minTime = Math.min(
+      deviceConfig.alarm_times.time_low_low || 60,
+      deviceConfig.alarm_times.time_low || 60,
+      deviceConfig.alarm_times.time_high || 60,
+      deviceConfig.alarm_times.time_high_high || 60
+    );
+    
+    // Interval debe ser 1 segundo para llenar buffers correctamente
+    const updateInterval = 1000; // 1 segundo fijo
+    
+    console.log(`🔧 Configurando sistema de alarmas con interval: ${updateInterval}ms (min threshold time: ${minTime}s)`);
+    
+    return {
+      devices: devicesData,
+      devicesConfig: [deviceConfig],
+      updateInterval,
+      devMode, // Pasar devMode para controlar si llama API real
+    };
+  }, [devicesData.length, deviceConfig?.device_id, deviceConfig?.active, devMode, hasCheckedThresholds]);
+
+  const {
+    alarmStates,
+    getActiveAlarms,
+    getCableAlarmState,
+    getCableAverage,
+  } = useAlarmSystem(alarmSystemConfig || {
+    devices: [],
+    devicesConfig: null,
+    updateInterval: 1000, // 1 segundo por defecto
+    devMode,
+  });
+
+  const currentDevice = useMemo(() => 
+    devicesData.find((device) => device.id === Number(deviceId)),
+    [devicesData, deviceId]
+  );
+
+  const handleConfigUpdate = (newConfig: DeviceThresholdConfig) => {
+    setDeviceConfig(newConfig);
+    setIsRequiredSetup(false); // Ya no es configuración obligatoria después de guardar
   };
 
-  const getForceStatus = (force: number) => {
+  // Verificar si existen thresholds para este dispositivo
+  const checkDeviceThresholds = async () => {
+    if (hasCheckedThresholds || !isAdmin) {
+      console.log(`🔍 Saltando verificación de thresholds - hasChecked: ${hasCheckedThresholds}, isAdmin: ${isAdmin}`);
+      return; // Solo verificar una vez y solo para admins
+    }
+    
+    try {
+      console.log(`🔍 ===== INICIANDO VERIFICACIÓN DE THRESHOLDS PARA DEVICE ${deviceId} =====`);
+      const response = await currentApi.getThresholds();
+      console.log(`📋 Respuesta completa de thresholds:`, response);
+      
+      if (response.status === 'success' && response.data) {
+        // Manejo flexible de la estructura de respuesta
+        let thresholds: any[] = [];
+        
+        if (Array.isArray(response.data)) {
+          thresholds = response.data;
+        } else if ((response.data as any).thresholds && Array.isArray((response.data as any).thresholds)) {
+          thresholds = (response.data as any).thresholds;
+        } else {
+          console.warn(`⚠️ Estructura de respuesta inesperada:`, response.data);
+        }
+        
+        const deviceThreshold = thresholds.find(threshold => threshold.device_id === Number(deviceId));
+        
+        if (!deviceThreshold) {
+          console.log(`⚠️ ===== NO THRESHOLDS ENCONTRADOS - ABRIENDO MODAL =====`);
+          setIsRequiredSetup(true);
+          setSettingsOpen(true);
+        } else {
+          console.log(`✅ ===== THRESHOLDS ENCONTRADOS =====`);
+          console.log(`📊 Threshold data:`, deviceThreshold);
+          
+          // Si no tenemos deviceConfig desde location.state, usar los datos de la API
+          if (!deviceConfig) {
+            console.log(`📝 ===== CREANDO DEVICE CONFIG DESDE API =====`);
+            const configFromAPI: DeviceThresholdConfig = {
+              device_id: deviceThreshold.device_id,
+              active: deviceThreshold.active,
+              thresholds: {
+                low_low: deviceThreshold.low_low,
+                low: deviceThreshold.low,
+                high: deviceThreshold.high,
+                high_high: deviceThreshold.high_high,
+              },
+              alarm_times: {
+                time_low_low: deviceThreshold.time_low_low || 60,
+                time_low: deviceThreshold.time_low || 30,
+                time_high: deviceThreshold.time_high || 300,
+                time_high_high: deviceThreshold.time_high_high || 30,
+              },
+            };
+            console.log(`🔧 ===== CONFIGURACIÓN FINAL CARGADA =====`, configFromAPI);
+            setDeviceConfig(configFromAPI);
+          } else {
+            console.log(`✅ ===== DEVICE CONFIG YA ESTABA CARGADO =====`);
+          }
+        }
+      } else {
+        console.warn('⚠️ ===== ERROR EN RESPUESTA DE THRESHOLDS =====', response.message);
+        // En caso de error, abrir modal obligatorio por seguridad
+        setIsRequiredSetup(true);
+        setSettingsOpen(true);
+      }
+    } catch (error) {
+      console.error('❌ ===== ERROR VERIFICANDO THRESHOLDS =====', error);
+      // En caso de error, abrir modal obligatorio por seguridad
+      setIsRequiredSetup(true);
+      setSettingsOpen(true);
+    } finally {
+      console.log(`🏁 ===== VERIFICACIÓN DE THRESHOLDS COMPLETADA =====`);
+      setHasCheckedThresholds(true);
+    }
+  };
+
+  // Función para navegar de forma segura al dashboard
+  const handleNavigateToHome = () => {
+    if (isNavigating) return; // Evitar navegaciones múltiples
+    
+    console.log("🚀 Iniciando navegación al dashboard...");
+    
+    try {
+      setIsNavigating(true);
+      
+      // Cerrar conexión WebSocket si existe
+      if (wsConnection) {
+        console.log("🔌 Cerrando WebSocket antes de navegar...");
+        wsConnection.close();
+        setWsConnection(null);
+      }
+      
+      // Limpiar estados
+      setLoading(false);
+      setError(null);
+      
+      console.log("🧹 Estados limpiados, navegando en 100ms...");
+      
+      // Pequeño delay para asegurar que el cleanup se complete
+      setTimeout(() => {
+        console.log("🎯 Ejecutando window.location.assign('/dashboard')");
+        // Usar window.location.assign para forzar navegación completa
+        // Esto garantiza que el componente se desmonte completamente
+        window.location.assign("/dashboard");
+      }, 100);
+    } catch (error) {
+      console.error("❌ Error durante la navegación:", error);
+      // Forzar navegación aunque haya errores
+      window.location.href = "/dashboard";
+    }
+  };
+
+  // Función alternativa usando React Router con key para forzar re-render
+  const handleNavigateToHomeReact = () => {
+    if (isNavigating) return;
+    
+    try {
+      setIsNavigating(true);
+      
+      // Cerrar conexión WebSocket si existe
+      if (wsConnection) {
+        wsConnection.close();
+        setWsConnection(null);
+      }
+      
+      // Navegar usando React Router con replace
+      navigate("/dashboard", { 
+        replace: true,
+        state: { forceRefresh: Date.now() } // Añadir timestamp para forzar re-render
+      });
+    } catch (error) {
+      console.error("Error durante la navegación con React Router:", error);
+      // Fallback a navegación nativa
+      window.location.href = "/dashboard";
+    }
+  };
+
+  const getCableColor = (force: number, cable?: string) => {
+    // Primero evaluar usando thresholds instantáneos (siempre)
+    if (deviceConfig?.thresholds) {
+      const { low_low, low, high, high_high } = deviceConfig.thresholds;
+      
+      // Crítico: menor o igual a low_low O mayor o igual a high_high
+      if (force <= low_low || force >= high_high) {
+        return "#ef4444"; // Crítico - Rojo
+      }
+      
+      // Alerta: entre low_low y low O entre high y high_high
+      if ((force > low_low && force <= low) || (force >= high && force < high_high)) {
+        return "#f59e0b"; // Alerta - Amarillo
+      }
+      
+      // Normal: entre low y high
+      return "#22c55e"; // Normal - Verde
+    }
+
+    // Si tenemos sistema de alarmas activo y hay una alarma, usar colores de alarma
+    if (cable && currentDevice && deviceConfig?.active) {
+      const alarmState = getCableAlarmState(currentDevice.id, cable);
+      if (alarmState.isActive) {
+        switch (alarmState.type) {
+          case 'low_low':
+          case 'high_high':
+            return "#ef4444"; // Crítico/Alarma - Rojo
+          case 'low':
+          case 'high':
+            return "#f59e0b"; // Alerta - Amarillo
+          default:
+            break;
+        }
+      }
+    }
+    
+    // Fallback a lógica anterior cuando no hay configuración de thresholds
+    if (force < 1500) return "#22c55e"; // Normal - Verde
+    if (force < 2000) return "#f59e0b"; // Alerta - Amarillo
+    return "#ef4444"; // Crítico - Rojo
+  };
+
+  const getForceStatus = (force: number, cable?: string) => {
+    // Primero evaluar usando thresholds instantáneos (siempre)
+    if (deviceConfig?.thresholds) {
+      const { low_low, low, high, high_high } = deviceConfig.thresholds;
+      
+      // Crítico: menor o igual a low_low O mayor o igual a high_high
+      if (force <= low_low || force >= high_high) {
+        return { label: "🚨 Crítico", color: "error" as const, isAlarm: false };
+      }
+      // Alerta: entre low_low y low O entre high y high_high
+      else if ((force > low_low && force <= low) || (force >= high && force < high_high)) {
+        return { label: "⚠️ Alerta", color: "warning" as const, isAlarm: false };
+      }
+      // Normal: entre low y high
+      else {
+        return { label: "✅ Normal", color: "success" as const, isAlarm: false };
+      }
+    }
+
+    // Si tenemos sistema de alarmas activo y hay una alarma, usar estados de alarma
+    if (cable && currentDevice && deviceConfig?.active) {
+      const alarmState = getCableAlarmState(currentDevice.id, cable);
+      if (alarmState.isActive) {
+        switch (alarmState.type) {
+          case 'low_low':
+          case 'high_high':
+            return { 
+              label: "🚨 ALARMA", 
+              color: "error" as const,
+              isAlarm: true,
+              average: alarmState.averageValue
+            };
+          case 'low':
+          case 'high':
+            return { 
+              label: "⚠️ ALERTA", 
+              color: "warning" as const,
+              isAlarm: true,
+              average: alarmState.averageValue
+            };
+          default:
+            break;
+        }
+      }
+    }
+    
+    // Fallback a lógica anterior cuando no hay configuración
     if (force < 1500) {
-      return { label: "Normal", color: "success" as const };
+      return { label: "✅ Normal", color: "success" as const, isAlarm: false };
     } else if (force < 2000) {
-      return { label: "Alerta", color: "warning" as const };
+      return { label: "⚠️ Alerta", color: "warning" as const, isAlarm: false };
     } else {
-      return { label: "Crítico", color: "error" as const };
+      return { label: "🚨 Crítico", color: "error" as const, isAlarm: false };
     }
   };
 
   // Conectar WebSocket
   useEffect(() => {
+    if (isNavigating) return; // No hacer nada si estamos navegando
+    
     let ws: any = null;
 
     const connectWebSocket = () => {
+      if (isNavigating) return; // Verificar nuevamente
+      
       try {
         setLoading(true);
         setError(null);
@@ -77,11 +356,13 @@ const RealTimeData = () => {
         );
 
         ws.onopen = () => {
+          if (isNavigating) return; // No procesar si estamos navegando
           console.log("🔌 RealTimeData WebSocket conectado");
           setLoading(false);
         };
 
         ws.onmessage = (event: MessageEvent) => {
+          if (isNavigating) return; // No procesar si estamos navegando
           try {
             const data = JSON.parse(event.data) as DevicesData;
             setDevicesData(data.devices);
@@ -92,24 +373,33 @@ const RealTimeData = () => {
 
         ws.onclose = () => {
           console.log("🔌 RealTimeData WebSocket desconectado");
-          setLoading(false);
+          setWsConnection(null);
+          if (!isNavigating) {
+            setLoading(false);
+          }
         };
 
         ws.onerror = (error: Event) => {
           console.error("🔌 Error en RealTimeData WebSocket:", error);
-          if (!devMode) {
+          if (!devMode && !isNavigating) {
             setError("Error de conexión con el servidor");
           }
-          setLoading(false);
+          setWsConnection(null);
+          if (!isNavigating) {
+            setLoading(false);
+          }
         };
 
         setWsConnection(ws);
       } catch (err) {
         console.error("Error creando conexión WebSocket:", err);
-        if (!devMode) {
+        if (!devMode && !isNavigating) {
           setError("No se pudo conectar al servidor");
         }
-        setLoading(false);
+        setWsConnection(null);
+        if (!isNavigating) {
+          setLoading(false);
+        }
       }
     };
 
@@ -118,18 +408,76 @@ const RealTimeData = () => {
     return () => {
       if (ws) {
         ws.close();
+        setWsConnection(null);
       }
     };
-  }, [currentApi, devMode, esp32IP]);
+  }, [currentApi, devMode, esp32IP, isNavigating]);
 
-  // Cleanup WebSocket
+  // Cleanup WebSocket al desmontar componente
   useEffect(() => {
     return () => {
       if (wsConnection) {
         wsConnection.close();
+        setWsConnection(null);
       }
     };
+  }, [wsConnection]);
+
+  // Cleanup general al desmontar el componente
+  useEffect(() => {
+    return () => {
+      // Limpiar cualquier conexión WebSocket restante
+      if (wsConnection) {
+        try {
+          wsConnection.close();
+        } catch (error) {
+          console.error("Error cerrando WebSocket en cleanup:", error);
+        }
+      }
+      
+      // Limpiar estados
+      setLoading(false);
+      setError(null);
+      setDevicesData([]);
+    };
   }, []);
+
+  // Verificar thresholds INMEDIATAMENTE al cargar el componente (primera prioridad)
+  useEffect(() => {
+    // Solo verificar si es admin, no estamos navegando y no hemos verificado aún
+    if (isAdmin && !isNavigating && !hasCheckedThresholds && deviceId) {
+      console.log(`🔍 PRIORIDAD: Verificando thresholds ANTES que WebSocket para device ${deviceId}...`);
+      
+      // Ejecutar inmediatamente, sin timeout
+      checkDeviceThresholds();
+    }
+  }, [isAdmin, isNavigating, hasCheckedThresholds, deviceId]); // Ejecutar tan pronto como tengamos deviceId
+
+  // Verificar thresholds automáticamente al cargar el componente (DEPRECADO - movido arriba)
+  // useEffect(() => {
+  //   // Solo verificar si es admin y no estamos navegando
+  //   if (isAdmin && !isNavigating && !hasCheckedThresholds) {
+  //     // Esperar un poco para que se establezca la conexión
+  //     const timeoutId = setTimeout(() => {
+  //       checkDeviceThresholds();
+  //     }, 1000);
+
+  //     return () => clearTimeout(timeoutId);
+  //   }
+  // }, [isAdmin, isNavigating, hasCheckedThresholds, deviceId]);
+
+  // Detectar cambios en la ubicación y forzar cleanup si se navega fuera
+  useEffect(() => {
+    if (location.pathname !== `/real-time-data/${deviceId}`) {
+      setIsNavigating(true);
+      
+      // Limpiar conexiones inmediatamente
+      if (wsConnection) {
+        wsConnection.close();
+        setWsConnection(null);
+      }
+    }
+  }, [location.pathname, deviceId, wsConnection]);
 
   if (loading || (!currentDevice && devicesData.length === 0)) {
     return (
@@ -222,21 +570,16 @@ const RealTimeData = () => {
     currentDevice.Oeste,
   ];
 
-  const maxForce = Math.max(...forces);
-  const minForce = Math.min(...forces);
-  const avgForce = forces.reduce((a, b) => a + b, 0) / forces.length;
-  const imbalance = (((maxForce - minForce) / avgForce) * 100).toFixed(1);
-
-  const maxCableIndex = cableValues.indexOf(maxForce);
-  const minCableIndex = cableValues.indexOf(minForce);
-  const maxCableName = cableNames[maxCableIndex];
-  const minCableName = cableNames[minCableIndex];
-
   // Renderizar el chart según el tipo seleccionado
   const renderChart = () => {
     switch (chartType) {
       case "circles":
-        return <TowerView device={currentDevice} darkMode={darkMode} />;
+        return <TowerView 
+          device={currentDevice} 
+          darkMode={darkMode} 
+          deviceConfig={deviceConfig}
+          getCableAlarmState={getCableAlarmState}
+        />;
       // case "bar":
       //   return <BarChart device={currentDevice} darkMode={darkMode} />;
       case "radar":
@@ -246,7 +589,12 @@ const RealTimeData = () => {
       case "heatmap":
         return <HeatmapChart device={currentDevice} darkMode={darkMode} />;
       default:
-        return <TowerView device={currentDevice} darkMode={darkMode} />;
+        return <TowerView 
+          device={currentDevice} 
+          darkMode={darkMode} 
+          deviceConfig={deviceConfig}
+          getCableAlarmState={getCableAlarmState}
+        />;
     }
   };
 
@@ -274,7 +622,8 @@ const RealTimeData = () => {
         <Toolbar sx={{ px: { xs: 2, sm: 3 } }}>
           <IconButton
             edge="start"
-            onClick={() => navigate("/dashboard")}
+            onClick={handleNavigateToHome}
+            disabled={isNavigating}
             sx={{
               mr: 2,
               color: "text.primary",
@@ -283,10 +632,18 @@ const RealTimeData = () => {
                 bgcolor: darkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)",
                 transform: "scale(1.05)",
               },
+              "&:disabled": {
+                bgcolor: darkMode ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.02)",
+                color: "text.disabled",
+              },
               transition: "all 0.2s ease",
             }}
           >
-            <BackIcon />
+            {isNavigating ? (
+              <CircularProgress size={20} color="inherit" />
+            ) : (
+              <BackIcon />
+            )}
           </IconButton>
           <Box sx={{ flexGrow: 1 }}>
             <Typography
@@ -310,232 +667,29 @@ const RealTimeData = () => {
               ID: {currentDevice.id} • Monitoreo en Tiempo Real
             </Typography>
           </Box>
-          <IconButton
-            sx={{
-              color: "text.primary",
-              bgcolor: darkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
-              "&:hover": {
-                bgcolor: darkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)",
-                transform: "scale(1.05)",
-              },
-              transition: "all 0.2s ease",
-            }}
-          >
-            <SettingsIcon />
-          </IconButton>
+          {/* Botón de configuración - Solo para administradores */}
+          {isAdmin && (
+            <IconButton
+              onClick={() => setSettingsOpen(true)}
+              sx={{
+                color: "text.primary",
+                bgcolor: darkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
+                "&:hover": {
+                  bgcolor: darkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)",
+                  transform: "scale(1.05)",
+                },
+                transition: "all 0.2s ease",
+              }}
+            >
+              <SettingsIcon />
+            </IconButton>
+          )}
         </Toolbar>
       </AppBar>
 
       {/* Contenido Principal */}
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
         <Grid container spacing={{ xs: 2, sm: 3 }}>
-          {/* Panel de Estadísticas */}
-          <Grid item xs={12}>
-            <Card
-              sx={{
-                background: darkMode
-                  ? "linear-gradient(135deg, #374151 0%, #4b5563 50%, #6b7280 100%)"
-                  : "linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)",
-                border: darkMode ? "1px solid #6b7280" : "1px solid #E2E8F0",
-              }}
-            >
-              <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
-                <Typography
-                  variant="h6"
-                  gutterBottom
-                  sx={{ mb: 3, fontWeight: 600, color: "text.primary" }}
-                >
-                  Estadísticas en Tiempo Real
-                </Typography>
-                <Grid container spacing={{ xs: 2, sm: 3 }}>
-                  <Grid item xs={6} sm={3}>
-                    <Box
-                      sx={{
-                        textAlign: "center",
-                        p: { xs: 1.5, sm: 2 },
-                        borderRadius: 2,
-                        background: darkMode
-                          ? "rgba(34, 197, 94, 0.1)"
-                          : "rgba(34, 197, 94, 0.05)",
-                        border: darkMode
-                          ? "1px solid rgba(34, 197, 94, 0.2)"
-                          : "1px solid rgba(34, 197, 94, 0.1)",
-                      }}
-                    >
-                      <Typography
-                        variant="h4"
-                        sx={{
-                          color: "success.main",
-                          fontWeight: 700,
-                          fontSize: { xs: "1.5rem", sm: "2rem" },
-                        }}
-                      >
-                        {maxForce}
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          color: "text.secondary",
-                          fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                          fontWeight: 500,
-                          display: "block",
-                        }}
-                      >
-                        Tensión Máxima (N)
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          color: "success.main",
-                          fontSize: { xs: "0.7rem", sm: "0.8rem" },
-                          fontWeight: 600,
-                          display: "block",
-                          mt: 0.5,
-                        }}
-                      >
-                        Cable {maxCableName}
-                      </Typography>
-                    </Box>
-                  </Grid>
-                  <Grid item xs={6} sm={3}>
-                    <Box
-                      sx={{
-                        textAlign: "center",
-                        p: { xs: 1.5, sm: 2 },
-                        borderRadius: 2,
-                        background: darkMode
-                          ? "rgba(239, 68, 68, 0.1)"
-                          : "rgba(239, 68, 68, 0.05)",
-                        border: darkMode
-                          ? "1px solid rgba(239, 68, 68, 0.2)"
-                          : "1px solid rgba(239, 68, 68, 0.1)",
-                      }}
-                    >
-                      <Typography
-                        variant="h4"
-                        sx={{
-                          color: "error.main",
-                          fontWeight: 700,
-                          fontSize: { xs: "1.5rem", sm: "2rem" },
-                        }}
-                      >
-                        {minForce}
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          color: "text.secondary",
-                          fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                          fontWeight: 500,
-                          display: "block",
-                        }}
-                      >
-                        Tensión Mínima (N)
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          color: "error.main",
-                          fontSize: { xs: "0.7rem", sm: "0.8rem" },
-                          fontWeight: 600,
-                          display: "block",
-                          mt: 0.5,
-                        }}
-                      >
-                        Cable {minCableName}
-                      </Typography>
-                    </Box>
-                  </Grid>
-                  {/* <Grid item xs={6} sm={3}>
-                    <Box
-                      sx={{
-                        textAlign: "center",
-                        p: { xs: 1.5, sm: 2 },
-                        borderRadius: 2,
-                        background: darkMode
-                          ? "rgba(59, 130, 246, 0.1)"
-                          : "rgba(59, 130, 246, 0.05)",
-                        border: darkMode
-                          ? "1px solid rgba(59, 130, 246, 0.2)"
-                          : "1px solid rgba(59, 130, 246, 0.1)",
-                      }}
-                    >
-                      <Typography
-                        variant="h4"
-                        sx={{
-                          color: "info.main",
-                          fontWeight: 700,
-                          fontSize: { xs: "1.5rem", sm: "2rem" },
-                        }}
-                      >
-                        {avgForce.toFixed(0)}
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          color: "text.secondary",
-                          fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                          fontWeight: 500,
-                        }}
-                      >
-                        Promedio (N)
-                      </Typography>
-                    </Box>
-                  </Grid>
-                  <Grid item xs={6} sm={3}>
-                    <Box
-                      sx={{
-                        textAlign: "center",
-                        p: { xs: 1.5, sm: 2 },
-                        borderRadius: 2,
-                        background:
-                          Number(imbalance) > 50
-                            ? darkMode
-                              ? "rgba(245, 158, 11, 0.1)"
-                              : "rgba(245, 158, 11, 0.05)"
-                            : darkMode
-                            ? "rgba(34, 197, 94, 0.1)"
-                            : "rgba(34, 197, 94, 0.05)",
-                        border:
-                          Number(imbalance) > 50
-                            ? darkMode
-                              ? "1px solid rgba(245, 158, 11, 0.2)"
-                              : "1px solid rgba(245, 158, 11, 0.1)"
-                            : darkMode
-                            ? "1px solid rgba(34, 197, 94, 0.2)"
-                            : "1px solid rgba(34, 197, 94, 0.1)",
-                      }}
-                    >
-                      <Typography
-                        variant="h4"
-                        sx={{
-                          color:
-                            Number(imbalance) > 50
-                              ? "warning.main"
-                              : "success.main",
-                          fontWeight: 700,
-                          fontSize: { xs: "1.5rem", sm: "2rem" },
-                        }}
-                      >
-                        {imbalance}%
-                      </Typography>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          color: "text.secondary",
-                          fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                          fontWeight: 500,
-                        }}
-                      >
-                        Desbalance
-                      </Typography>
-                    </Box>
-                  </Grid> */}
-                </Grid>
-              </CardContent>
-            </Card>
-          </Grid>
-
           {/* Vista de Torre con Tabs */}
           <Grid item xs={12} lg={6}>
             <Card
@@ -622,24 +776,49 @@ const RealTimeData = () => {
                       flexWrap: "wrap",
                     }}
                   >
-                    <Chip
-                      label="Normal: < 1500N"
-                      color="success"
-                      size="small"
-                      sx={{ fontWeight: 500 }}
-                    />
-                    <Chip
-                      label="Alerta: 1500-2000N"
-                      color="warning"
-                      size="small"
-                      sx={{ fontWeight: 500 }}
-                    />
-                    <Chip
-                      label="Crítico: > 2000N"
-                      color="error"
-                      size="small"
-                      sx={{ fontWeight: 500 }}
-                    />
+                    {deviceConfig?.thresholds ? (
+                      <>
+                        <Chip
+                          label={`Normal: ${deviceConfig.thresholds.low + 1}-${deviceConfig.thresholds.high - 1}N`}
+                          color="success"
+                          size="small"
+                          sx={{ fontWeight: 500 }}
+                        />
+                        <Chip
+                          label={`Alerta: ≤${deviceConfig.thresholds.low}N o ≥${deviceConfig.thresholds.high}N`}
+                          color="warning"
+                          size="small"
+                          sx={{ fontWeight: 500 }}
+                        />
+                        <Chip
+                          label={`Crítico: ≤${deviceConfig.thresholds.low_low}N o ≥${deviceConfig.thresholds.high_high}N`}
+                          color="error"
+                          size="small"
+                          sx={{ fontWeight: 500 }}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <Chip
+                          label="Normal: < 1500N"
+                          color="success"
+                          size="small"
+                          sx={{ fontWeight: 500 }}
+                        />
+                        <Chip
+                          label="Alerta: 1500-2000N"
+                          color="warning"
+                          size="small"
+                          sx={{ fontWeight: 500 }}
+                        />
+                        <Chip
+                          label="Crítico: > 2000N"
+                          color="error"
+                          size="small"
+                          sx={{ fontWeight: 500 }}
+                        />
+                      </>
+                    )}
                   </Box>
                 </Box>
               </CardContent>
@@ -699,22 +878,34 @@ const RealTimeData = () => {
                         : "linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0.02) 100%)",
                     },
                   ].map((cable) => {
-                    const status = getForceStatus(cable.value);
+                    const status = getForceStatus(cable.value, cable.name);
+                    const alarmState = getCableAlarmState(currentDevice.id, cable.name);
+                    const average = getCableAverage(currentDevice.id, cable.name);
+                    
                     return (
                       <Grid item xs={12} sm={6} key={cable.name}>
                         <Box
                           sx={{
                             p: { xs: 2, sm: 2.5 },
                             background: cable.gradient,
-                            border: `2px solid ${getCableColor(cable.value)}`,
+                            border: `2px solid ${getCableColor(cable.value, cable.name)}`,
                             borderRadius: 2,
                             transition: "all 0.3s ease",
                             "&:hover": {
                               transform: "translateY(-2px)",
                               boxShadow: `0 8px 25px -8px ${getCableColor(
-                                cable.value
+                                cable.value, cable.name
                               )}`,
                             },
+                            // Efecto de parpadeo para alarmas activas
+                            ...(alarmState.isActive && {
+                              animation: 'pulse 1.5s infinite',
+                              '@keyframes pulse': {
+                                '0%': { boxShadow: `0 0 5px ${getCableColor(cable.value, cable.name)}` },
+                                '50%': { boxShadow: `0 0 20px ${getCableColor(cable.value, cable.name)}` },
+                                '100%': { boxShadow: `0 0 5px ${getCableColor(cable.value, cable.name)}` },
+                              },
+                            }),
                           }}
                         >
                           <Box
@@ -746,19 +937,59 @@ const RealTimeData = () => {
                               label={status.label}
                               color={status.color}
                               size="small"
-                              sx={{ fontWeight: 500 }}
+                              sx={{ 
+                                fontWeight: 500,
+                                ...(status.isAlarm && {
+                                  animation: 'blink 1s infinite',
+                                  '@keyframes blink': {
+                                    '0%, 50%': { opacity: 1 },
+                                    '51%, 100%': { opacity: 0.5 },
+                                  },
+                                }),
+                              }}
                             />
                           </Box>
                           <Typography
                             variant="h5"
                             sx={{
                               fontWeight: 700,
-                              color: getCableColor(cable.value),
+                              color: getCableColor(cable.value, cable.name),
                               fontSize: { xs: "1.25rem", sm: "1.5rem" },
                             }}
                           >
                             {cable.value} N
                           </Typography>
+                          
+                          {/* Mostrar promedio si hay sistema de alarmas activo */}
+                          {deviceConfig?.active && average > 0 && (
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                display: "block",
+                                mt: 0.5,
+                                color: "text.secondary",
+                                fontSize: "0.75rem",
+                              }}
+                            >
+                              Promedio {deviceConfig.alarm_times.time_low}s: {average.toFixed(1)} N
+                            </Typography>
+                          )}
+                          
+                          {/* Mostrar tiempo de alarma activa */}
+                          {alarmState.isActive && alarmState.startTime && (
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                display: "block",
+                                mt: 0.5,
+                                color: status.color === 'error' ? 'error.main' : 'warning.main',
+                                fontSize: "0.75rem",
+                                fontWeight: 600,
+                              }}
+                            >
+                              ⏰ Alarma activa: {Math.floor((Date.now() - alarmState.startTime) / 1000)}s
+                            </Typography>
+                          )}
                         </Box>
                       </Grid>
                     );
@@ -769,6 +1000,23 @@ const RealTimeData = () => {
           </Grid>
         </Grid>
       </Box>
+
+      {/* Diálogo de configuración de thresholds - Solo para administradores */}
+      {isAdmin && (
+        <ThresholdSettings
+          open={settingsOpen}
+          onClose={() => {
+            if (!isRequiredSetup) {
+              setSettingsOpen(false);
+            }
+            // Si es configuración obligatoria, no permitir cerrar hasta guardar
+          }}
+          deviceId={Number(deviceId)}
+          deviceConfig={deviceConfig}
+          onConfigUpdate={handleConfigUpdate}
+          isRequiredSetup={isRequiredSetup}
+        />
+      )}
     </Box>
   );
 };

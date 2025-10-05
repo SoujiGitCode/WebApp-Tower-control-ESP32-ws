@@ -189,7 +189,7 @@ const LoginPage = () => {
                 </Box>
 
                 {/* Toggle Dev Mode */}
-                <Box
+                {/* <Box
                   onClick={() => setDevMode(!devMode)}
                   sx={{
                     width: 36,
@@ -222,10 +222,10 @@ const LoginPage = () => {
                   ) : (
                     <CodeIcon sx={{ fontSize: 16, color: "#9ca3af" }} />
                   )}
-                </Box>
+                </Box> */}
 
                 {/* Toggle IP Config */}
-                <Box
+                {/* <Box
                   onClick={() => setShowIpConfig(!showIpConfig)}
                   sx={{
                     width: 36,
@@ -258,7 +258,7 @@ const LoginPage = () => {
                   ) : (
                     <SettingsIcon sx={{ fontSize: 16, color: "#9ca3af" }} />
                   )}
-                </Box>
+                </Box> */}
               </Box>
             </Box>
 
@@ -436,7 +436,7 @@ const LoginPage = () => {
             {/* Info del sistema */}
             <Box sx={{ textAlign: "center", mt: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                v1.0.0 | WebApp Tower Control ESP32
+                v2.0.0 | WebApp Sely
               </Typography>
             </Box>
           </Box>

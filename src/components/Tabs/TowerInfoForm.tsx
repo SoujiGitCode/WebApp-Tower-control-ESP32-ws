@@ -1,18 +1,36 @@
 import React, { useEffect, useState } from 'react';
-import { Box, TextField, Button, CircularProgress, Typography } from '@mui/material';
+import { 
+    Box, 
+    TextField, 
+    Button, 
+    CircularProgress, 
+    Typography, 
+    Card, 
+    CardContent, 
+    Grid, 
+    Divider,
+    Paper,
+    Alert
+} from '@mui/material';
+import { 
+    CellTower as TowerIcon, 
+    Save as SaveIcon, 
+    LocationOn as LocationIcon,
+    Numbers as NumbersIcon,
+    Category as CategoryIcon 
+} from '@mui/icons-material';
 import axios from 'axios';
-import { useAppContext } from '@context/AppContext'; // Importar el contexto global para obtener la IP y otros datos
+import { useAppContext } from '@context/AppContext';
 import { toast } from 'react-toastify';
 import PasswordTextField from '@components/PasswordTextField';
 
 const TowerInfoForm = () => {
-    const { esp32IP } = useAppContext(); // Usar la IP desde el context
-    const [loading, setLoading] = useState(true); // Para mostrar el spinner
+    const { esp32IP, darkMode } = useAppContext();
+    const [loading, setLoading] = useState(true);
     const [formData, setFormData] = useState({
         admin_password: '',
         id: '',
         name: '',
-        slang: '',
         location: '',
         priority: '',
         type: '',
@@ -29,7 +47,6 @@ const TowerInfoForm = () => {
                     admin_password: '',
                     id: response.data.data.id,
                     name: response.data.data.name,
-                    slang: response.data.data.slang,
                     location: response.data.data.location,
                     priority: response.data.data.priority,
                     type: response.data.data.type,
@@ -81,110 +98,216 @@ const TowerInfoForm = () => {
     // Mostrar spinner mientras los datos se cargan
     if (loading) {
         return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                <CircularProgress />
+            <Box sx={{ 
+                display: 'flex', 
+                flexDirection: 'column',
+                justifyContent: 'center', 
+                alignItems: 'center', 
+                height: 400,
+                gap: 1
+            }}>
+                <CircularProgress size={60} sx={{ color: darkMode ? '#60a5fa' : '#3b82f6' }} />
+                <Typography variant="h6" sx={{ color: 'text.secondary' }}>
+                    Cargando información de la torre...
+                </Typography>
             </Box>
         );
     }
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%', justifyContent: 'center', gap: 3 }}>
-            <Typography variant="h6" align="center" gutterBottom>
-                Sistema de Alarma de Tensión de Piolas
-            </Typography>
-            {/* <TextField
-                label="Contraseña de Administrador"
-                variant="outlined"
-                fullWidth
-                name="admin_password"
-                value={formData.admin_password}
-                onChange={handleChange}
-                type="password"
-                required
-            /> */}
-
-            <PasswordTextField
-                label="Contraseña de Administrador"
-                name="admin_password"
-                fullWidth
-                value={formData.admin_password}
-                onChange={handleChange}
-            />
-            <TextField
-                label="ID"
-                variant="outlined"
-                fullWidth
-                name="id"
-                value={formData.id}
-                onChange={handleChange}
-                required
-            />
-            <TextField
-                label="Name"
-                variant="outlined"
-                fullWidth
-                name="name"
-                value={formData.name}
-                onChange={handleChange}
-                required
-            />
-            <TextField
-                label="Slang"
-                variant="outlined"
-                fullWidth
-                name="slang"
-                value={formData.slang}
-                onChange={handleChange}
-                required
-            />
-            <TextField
-                label="Location"
-                variant="outlined"
-                fullWidth
-                name="location"
-                value={formData.location}
-                onChange={handleChange}
-                required
-            />
-            <TextField
-                label="Priority"
-                variant="outlined"
-                fullWidth
-                name="priority"
-                value={formData.priority}
-                onChange={handleChange}
-                required
-                type="number"
-            />
-            <TextField
-                label="Type"
-                variant="outlined"
-                fullWidth
-                name="type"
-                value={formData.type}
-                onChange={handleChange}
-                required
-            />
-            <TextField
-                label="Load Cells Amount"
-                variant="outlined"
-                fullWidth
-                name="loadcells_amount"
-                value={formData.loadcells_amount}
-                onChange={handleChange}
-                required
-                type="number"
-            />
-            <Button variant="contained" color="primary" onClick={handleSubmit} sx={{ marginTop: 2 }}>
-                Guardar
-            </Button>
-
-            {/* Mensajes de error o éxito */}
-            {feedbackMessage.message && (
-                <Typography color={feedbackMessage.type === 'success' ? 'primary' : 'error'} variant="body2" align="center">
-                    {feedbackMessage.message}
+        <Box sx={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            width: '100%', 
+            maxWidth: 800,
+            margin: '0 auto',
+            gap: 2,
+            p: 1
+        }}>
+            {/* Header */}
+            <Paper 
+                elevation={3} 
+                sx={{ 
+                    p: 3, 
+                    background: darkMode 
+                        ? 'linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)' 
+                        : 'linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%)',
+                    color: 'white',
+                    borderRadius: 2
+                }}
+            >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                    <TowerIcon sx={{ fontSize: 32 }} />
+                    <Typography variant="h5" fontWeight="bold">
+                        Sistema de Alarma de Tensión de Piolas
+                    </Typography>
+                </Box>
+                <Typography variant="body1" sx={{ opacity: 0.9 }}>
+                    Configuración de la información de la torre de transmisión
                 </Typography>
-            )}
+            </Paper>
+
+            {/* Formulario */}
+            <Card elevation={2} sx={{ borderRadius: 2 }}>
+                <CardContent sx={{ p: 4 }}>
+                    {/* Contraseña */}
+                    <Box sx={{ mb: 4 }}>
+                        <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                            🔐 Autenticación
+                        </Typography>
+                        <PasswordTextField
+                            label="Contraseña de Administrador"
+                            name="admin_password"
+                            fullWidth
+                            value={formData.admin_password}
+                            onChange={handleChange}
+                            variant="outlined"
+                            required
+                            sx={{ backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' }}
+                        />
+                    </Box>
+
+                    <Divider sx={{ my: 3 }} />
+
+                    {/* Información básica */}
+                    <Box sx={{ mb: 4 }}>
+                        <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+                            🏗️ Información Básica
+                        </Typography>
+                        <Grid container spacing={3}>
+                            <Grid item xs={12} md={6}>
+                                <TextField
+                                    label="ID de la Torre"
+                                    variant="outlined"
+                                    fullWidth
+                                    name="id"
+                                    value={formData.id}
+                                    onChange={handleChange}
+                                    required
+                                    InputProps={{
+                                        startAdornment: <NumbersIcon sx={{ color: 'action.active', mr: 1 }} />
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <TextField
+                                    label="Nombre de la Torre"
+                                    variant="outlined"
+                                    fullWidth
+                                    name="name"
+                                    value={formData.name}
+                                    onChange={handleChange}
+                                    required
+                                    InputProps={{
+                                        startAdornment: <TowerIcon sx={{ color: 'action.active', mr: 1 }} />
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12}>
+                                <TextField
+                                    label="Ubicación"
+                                    variant="outlined"
+                                    fullWidth
+                                    name="location"
+                                    value={formData.location}
+                                    onChange={handleChange}
+                                    required
+                                    InputProps={{
+                                        startAdornment: <LocationIcon sx={{ color: 'action.active', mr: 1 }} />
+                                    }}
+                                />
+                            </Grid>
+                        </Grid>
+                    </Box>
+
+                    <Divider sx={{ my: 3 }} />
+
+                    {/* Configuración técnica */}
+                    <Box sx={{ mb: 4 }}>
+                        <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+                            ⚙️ Configuración Técnica
+                        </Typography>
+                        <Grid container spacing={3}>
+                            <Grid item xs={12} md={4}>
+                                <TextField
+                                    label="Prioridad"
+                                    variant="outlined"
+                                    fullWidth
+                                    name="priority"
+                                    value={formData.priority}
+                                    onChange={handleChange}
+                                    required
+                                    type="number"
+                                    helperText="Nivel de prioridad (1-10)"
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={4}>
+                                <TextField
+                                    label="Tipo de Torre"
+                                    variant="outlined"
+                                    fullWidth
+                                    name="type"
+                                    value={formData.type}
+                                    onChange={handleChange}
+                                    required
+                                    InputProps={{
+                                        startAdornment: <CategoryIcon sx={{ color: 'action.active', mr: 1 }} />
+                                    }}
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={4}>
+                                <TextField
+                                    label="Cantidad de Celdas de Carga"
+                                    variant="outlined"
+                                    fullWidth
+                                    name="loadcells_amount"
+                                    value={formData.loadcells_amount}
+                                    onChange={handleChange}
+                                    required
+                                    type="number"
+                                    helperText="Número de sensores"
+                                />
+                            </Grid>
+                        </Grid>
+                    </Box>
+
+                    {/* Botón de guardar */}
+                    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+                        <Button 
+                            variant="contained" 
+                            size="large"
+                            onClick={handleSubmit}
+                            startIcon={<SaveIcon />}
+                            sx={{ 
+                                minWidth: 200,
+                                py: 1.5,
+                                background: darkMode 
+                                    ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)' 
+                                    : 'linear-gradient(135deg, #10b981 0%, #34d399 100%)',
+                                '&:hover': {
+                                    background: darkMode 
+                                        ? 'linear-gradient(135deg, #047857 0%, #059669 100%)' 
+                                        : 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                                }
+                            }}
+                        >
+                            Guardar Configuración
+                        </Button>
+                    </Box>
+
+                    {/* Mensajes de feedback */}
+                    {feedbackMessage.message && (
+                        <Box sx={{ mt: 3 }}>
+                            <Alert 
+                                severity={feedbackMessage.type === 'success' ? 'success' : 'error'}
+                                sx={{ borderRadius: 2 }}
+                            >
+                                {feedbackMessage.message}
+                            </Alert>
+                        </Box>
+                    )}
+                </CardContent>
+            </Card>
         </Box>
     );
 };

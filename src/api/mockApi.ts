@@ -9,6 +9,8 @@ import {
   AuthUser,
   Device,
   DevicesData,
+  Threshold,
+  DevicesStatusResponse,
 } from "./index";
 
 // ========== DATOS MOCK ==========
@@ -397,6 +399,101 @@ export class MockApiClient {
     return `ws://${wsIP}:8080`;
   }
 
+  // ========== GESTIÓN DE THRESHOLDS ==========
+  async getThresholds(): Promise<ApiResponse<Threshold[]>> {
+    await delay(300);
+    console.log(`🎯 [MOCK] Obteniendo thresholds`);
+    
+    // Mock data de thresholds
+    const mockThresholds: Threshold[] = [
+      {
+        device_id: 1,
+        low_low: 50,
+        low: 100,
+        high: 2000,
+        high_high: 3000,
+        active: true,
+        time_low: 120, // 2 minutos por defecto
+      },
+      {
+        device_id: 2,
+        low_low: 30,
+        low: 120,
+        high: 1000,
+        high_high: 2500,
+        active: true,
+        time_low: 90, // 1.5 minutos por defecto
+      }
+    ];
+
+    return createSuccessResponse(mockThresholds, "Thresholds obtenidos exitosamente");
+  }
+
+  async setThresholds(threshold: Threshold): Promise<ApiResponse> {
+    await delay(500);
+    console.log(`🎯 [MOCK] Configurando thresholds para device ${threshold.device_id}:`, threshold);
+    
+    if (threshold.device_id < 1 || threshold.device_id > 4) {
+      return createErrorResponse("ID de dispositivo inválido");
+    }
+
+    if (threshold.low_low >= threshold.low || threshold.low >= threshold.high || threshold.high >= threshold.high_high) {
+      return createErrorResponse("Los valores deben estar en orden: low_low < low < high < high_high");
+    }
+
+    return createSuccessResponse(
+      undefined,
+      `Thresholds configurados exitosamente para dispositivo ${threshold.device_id}`
+    );
+  }
+
+  // ========== ESTADO DE DISPOSITIVOS ==========
+  async getDevicesStatus(): Promise<ApiResponse<DevicesStatusResponse>> {
+    await delay(400);
+    console.log(`📊 [MOCK] Obteniendo estado de dispositivos`);
+    
+    // Mock data de devices status con thresholds y alarm times
+    const mockDevicesStatus: DevicesStatusResponse = {
+      devices: [
+        {
+          device_id: 1,
+          active: true,
+          thresholds: {
+            low_low: 50,
+            low: 100,
+            high: 2000,
+            high_high: 3000
+          },
+          alarm_times: {
+            time_low_low: 60,
+            time_low: 120,
+            time_high: 300,
+            time_high_high: 30
+          }
+        },
+        {
+          device_id: 2,
+          active: true,
+          thresholds: {
+            low_low: 30,
+            low: 120,
+            high: 1000,
+            high_high: 2500
+          },
+          alarm_times: {
+            time_low_low: 99,
+            time_low: 121,
+            time_high: 301,
+            time_high_high: 31
+          }
+        }
+      ],
+      total_devices: 2
+    };
+
+    return createSuccessResponse(mockDevicesStatus, "Device status obtenido exitosamente");
+  }
+
   generateRandomDevicesData(): DevicesData {
     const devices = mockDevicesData.devices.map((device) => ({
       ...device,
@@ -545,11 +642,23 @@ export const mockApi = {
     newPassword: string
   ) => mockApiClient.changePassword(username, oldPassword, newPassword),
 
+  // Thresholds
+  getThresholds: () => mockApiClient.getThresholds(),
+  setThresholds: (threshold: Threshold) => mockApiClient.setThresholds(threshold),
+
+  // Dispositivos
+  getDevicesStatus: () => mockApiClient.getDevicesStatus(),
+
   // Sistema
   factoryReset: () => mockApiClient.factoryReset(),
 
   // Configuración
   updateBaseURL: (newIP: string) => mockApiClient.updateBaseURL(newIP),
+
+  // Sesión
+  getSessionId: () => mockApiClient.getSessionId(),
+  setSessionId: (sessionId: string) => mockApiClient.setSessionId(sessionId),
+  removeSessionId: () => mockApiClient.removeSessionId(),
 
   // WebSocket
   createWebSocketConnection: (ip?: string) =>

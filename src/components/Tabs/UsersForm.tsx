@@ -22,6 +22,10 @@ import {
   Alert,
   CircularProgress,
   InputAdornment,
+  Grid,
+  Divider,
+  useTheme,
+  useMediaQuery,
 } from "@mui/material";
 import {
   Edit as EditIcon,
@@ -33,19 +37,24 @@ import {
   VisibilityOff as VisibilityOffIcon,
 } from "@mui/icons-material";
 import { useAppContext } from "../../context/AppContext";
+import { api, User } from "../../api/index";
 import { toast } from "react-toastify";
 
-interface User {
+interface UserLocal {
   id: number;
   username: string;
   role: "admin" | "user";
+  isActive: boolean;
 }
 
 const UsersForm = () => {
-  const { darkMode, isAdmin, logout } = useAppContext();
-  const [users, setUsers] = useState<User[]>([]);
+  const { darkMode, isAdmin, logout, currentApi } = useAppContext();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [users, setUsers] = useState<UserLocal[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [editingUser, setEditingUser] = useState<UserLocal | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     username: "",
@@ -55,22 +64,48 @@ const UsersForm = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Simular datos de usuarios (en una app real vendría de la API)
-  useEffect(() => {
-    const mockUsers: User[] = [
-      { id: 1, username: "admin", role: "admin" },
-      { id: 2, username: "usuario1", role: "user" },
-      { id: 3, username: "usuario2", role: "user" },
-      { id: 4, username: "operador", role: "user" },
-    ];
-
-    setTimeout(() => {
-      setUsers(mockUsers);
+  // Cargar usuarios desde la API
+  const loadUsers = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      console.log("🔍 Cargando usuarios desde la API...");
+      const response = await currentApi.getUsers();
+      console.log("📋 Respuesta de getUsers():", response);
+      
+      if (response.status === "success" && response.data) {
+        // Convertir los usuarios de la API al formato local
+        const usersWithId: UserLocal[] = response.data.map((user, index) => ({
+          id: index + 1, // Asignar ID secuencial ya que la API no tiene ID
+          username: user.username,
+          role: user.role === "ADMIN" ? "admin" : "user",
+          isActive: user.isActive,
+        }));
+        
+        console.log(`✅ ${usersWithId.length} usuarios cargados:`, usersWithId);
+        setUsers(usersWithId);
+      } else {
+        console.error("❌ Error en respuesta de usuarios:", response);
+        setError(response.message || "Error al cargar usuarios");
+        toast.error(response.message || "Error al cargar usuarios");
+      }
+    } catch (err) {
+      console.error("❌ Error cargando usuarios:", err);
+      setError("Error de conexión al cargar usuarios");
+      toast.error("Error de conexión al cargar usuarios");
+    } finally {
       setLoading(false);
-    }, 500);
-  }, []);
+    }
+  };
 
-  const handleEditUser = (user: User) => {
+  useEffect(() => {
+    if (isAdmin) {
+      loadUsers();
+    }
+  }, [currentApi, isAdmin]);
+
+  const handleEditUser = (user: UserLocal) => {
     setEditingUser(user);
     setFormData({
       username: user.username,
@@ -100,7 +135,7 @@ const UsersForm = () => {
     setShowConfirmPassword(!showConfirmPassword);
   };
 
-  const handleSaveUser = () => {
+  const handleSaveUser = async () => {
     if (!editingUser) return;
 
     // Validaciones
@@ -129,31 +164,46 @@ const UsersForm = () => {
       return;
     }
 
-    // Actualizar usuario
-    setUsers((prevUsers) =>
-      prevUsers.map((user) =>
-        user.id === editingUser.id
-          ? { ...user, username: formData.username }
-          : user
-      )
-    );
+    try {
+      setLoading(true);
+      
+      // Llamar a la API para actualizar el usuario
+      const response = await currentApi.updateUser(
+        editingUser.username, // Username original para identificar al usuario
+        formData.password || undefined, // Nueva contraseña (opcional)
+        editingUser.role === "admin" ? "ADMIN" : "USER", // Rol actual (no se cambia por ahora)
+        editingUser.isActive // Estado activo actual
+      );
 
-    const isEditingAdmin = editingUser.role === "admin";
+      if (response.status === "success") {
+        // Recargar usuarios desde la API para obtener datos actualizados
+        await loadUsers();
 
-    toast.success(
-      `Usuario actualizado correctamente${
-        formData.password ? " (incluyendo contraseña)" : ""
-      }${isEditingAdmin ? ". Cerrando sesión..." : ""}`
-    );
+        const isEditingAdmin = editingUser.role === "admin";
 
-    handleCloseDialog();
+        toast.success(
+          `Usuario actualizado correctamente${
+            formData.password ? " (incluyendo contraseña)" : ""
+          }${isEditingAdmin ? ". Cerrando sesión..." : ""}`
+        );
 
-    // Si se editó un admin, cerrar sesión después de un breve delay
-    if (isEditingAdmin) {
-      setTimeout(() => {
-        logout();
-        toast.info("Sesión cerrada por cambios en cuenta de administrador");
-      }, 1500);
+        handleCloseDialog();
+
+        // Si se editó un admin, cerrar sesión después de un breve delay
+        if (isEditingAdmin) {
+          setTimeout(() => {
+            logout();
+            toast.info("Sesión cerrada por cambios en cuenta de administrador");
+          }, 1500);
+        }
+      } else {
+        toast.error(response.message || "Error al actualizar usuario");
+      }
+    } catch (error) {
+      console.error("Error actualizando usuario:", error);
+      toast.error("Error de conexión al actualizar usuario");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -168,6 +218,124 @@ const UsersForm = () => {
   const getRoleColor = (role: "admin" | "user") => {
     return role === "admin" ? "error" : "primary";
   };
+
+  // Componente UserCard para vista móvil
+  const UserCard = ({ user }: { user: UserLocal }) => (
+    <Card
+      sx={{
+        mb: 2,
+        background: darkMode
+          ? "rgba(255,255,255,0.05)"
+          : "rgba(0,0,0,0.02)",
+        border: darkMode
+          ? "1px solid rgba(255,255,255,0.1)"
+          : "1px solid rgba(0,0,0,0.05)",
+        borderRadius: 2,
+        transition: 'all 0.2s ease-in-out',
+        '&:hover': {
+          background: darkMode
+            ? "rgba(255,255,255,0.08)"
+            : "rgba(0,0,0,0.04)",
+          transform: 'translateY(-1px)',
+          boxShadow: darkMode
+            ? '0 4px 12px rgba(0,0,0,0.3)'
+            : '0 4px 12px rgba(0,0,0,0.1)',
+        },
+      }}
+    >
+      <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'flex-start',
+          mb: 2 
+        }}>
+          <Typography
+            variant="h6"
+            sx={{ 
+              fontWeight: 600, 
+              color: "text.primary",
+              fontSize: { xs: '1.1rem', sm: '1.25rem' }
+            }}
+          >
+            {user.username}
+          </Typography>
+          <IconButton
+            onClick={() => handleEditUser(user)}
+            sx={{
+              color: "primary.main",
+              backgroundColor: darkMode
+                ? "rgba(59, 130, 246, 0.1)"
+                : "rgba(59, 130, 246, 0.05)",
+              "&:hover": {
+                backgroundColor: darkMode
+                  ? "rgba(59, 130, 246, 0.2)"
+                  : "rgba(59, 130, 246, 0.1)",
+                transform: 'scale(1.05)',
+              },
+              width: { xs: 40, sm: 44 },
+              height: { xs: 40, sm: 44 },
+            }}
+            title="Editar usuario"
+          >
+            <EditIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />
+          </IconButton>
+        </Box>
+
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} sm={6}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <Typography
+                variant="body2"
+                sx={{ 
+                  fontWeight: 500, 
+                  color: "text.secondary",
+                  minWidth: { xs: '60px', sm: '70px' }
+                }}
+              >
+                Rol:
+              </Typography>
+              <Chip
+                icon={getRoleIcon(user.role)}
+                label={user.role}
+                color={getRoleColor(user.role)}
+                size="small"
+                sx={{ 
+                  fontWeight: 500, 
+                  textTransform: "capitalize",
+                  fontSize: { xs: '0.7rem', sm: '0.8rem' }
+                }}
+              />
+            </Box>
+          </Grid>
+          
+          <Grid item xs={12} sm={6}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography
+                variant="body2"
+                sx={{ 
+                  fontWeight: 500, 
+                  color: "text.secondary",
+                  minWidth: { xs: '60px', sm: '70px' }
+                }}
+              >
+                Estado:
+              </Typography>
+              <Chip
+                label={user.isActive ? "Activo" : "Inactivo"}
+                color={user.isActive ? "success" : "default"}
+                size="small"
+                sx={{ 
+                  fontWeight: 500,
+                  fontSize: { xs: '0.7rem', sm: '0.8rem' }
+                }}
+              />
+            </Box>
+          </Grid>
+        </Grid>
+      </CardContent>
+    </Card>
+  );
 
   if (!isAdmin) {
     return (
@@ -191,13 +359,15 @@ const UsersForm = () => {
           borderRadius: 2,
         }}
       >
-        <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+        <CardContent sx={{ p: { xs: 1.5, sm: 2, md: 3 } }}>
           <Box
             sx={{
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              mb: 3,
+              mb: { xs: 2, sm: 3 },
+              flexDirection: { xs: 'column', sm: 'row' },
+              gap: { xs: 1, sm: 0 }
             }}
           >
             <Typography
@@ -208,15 +378,19 @@ const UsersForm = () => {
                 display: "flex",
                 alignItems: "center",
                 gap: 1,
+                fontSize: { xs: '1.3rem', sm: '1.5rem' }
               }}
             >
               👥 Gestión de Usuarios
             </Typography>
             <Chip
-              label={`${users.length} usuarios`}
+              label={`${users.length} usuario${users.length !== 1 ? 's' : ''}`}
               color="primary"
-              size="small"
-              sx={{ fontWeight: 500 }}
+              size={isMobile ? "small" : "medium"}
+              sx={{ 
+                fontWeight: 500,
+                fontSize: { xs: '0.75rem', sm: '0.85rem' }
+              }}
             />
           </Box>
 
@@ -231,101 +405,166 @@ const UsersForm = () => {
             >
               <CircularProgress />
             </Box>
-          ) : (
-            <TableContainer
-              component={Paper}
-              sx={{
+          ) : error ? (
+            <Alert 
+              severity="error" 
+              sx={{ 
                 borderRadius: 2,
-                background: darkMode
-                  ? "rgba(255,255,255,0.05)"
-                  : "rgba(0,0,0,0.02)",
-                border: darkMode
-                  ? "1px solid rgba(255,255,255,0.1)"
-                  : "1px solid rgba(0,0,0,0.05)",
+                mb: 2
               }}
+              action={
+                <Button 
+                  color="inherit" 
+                  size="small" 
+                  onClick={() => loadUsers()}
+                >
+                  Reintentar
+                </Button>
+              }
             >
-              <Table>
-                <TableHead>
-                  <TableRow
-                    sx={{
-                      background: darkMode
-                        ? "rgba(255,255,255,0.08)"
-                        : "rgba(0,0,0,0.04)",
+              <Typography variant="body2">
+                <strong>Error al cargar usuarios:</strong><br />
+                {error}
+              </Typography>
+            </Alert>
+          ) : users.length === 0 ? (
+            <Alert severity="info" sx={{ borderRadius: 2 }}>
+              <Typography variant="body2">
+                No se encontraron usuarios en el sistema.
+              </Typography>
+            </Alert>
+          ) : (
+            <>
+              {isMobile ? (
+                // Vista móvil con cards
+                <Box sx={{ mt: 2 }}>
+                  <Typography 
+                    variant="h6" 
+                    sx={{ 
+                      mb: 2, 
+                      fontWeight: 600, 
+                      color: 'text.primary',
+                      fontSize: { xs: '1rem', sm: '1.1rem' }
                     }}
                   >
-                    <TableCell sx={{ fontWeight: 600 }}>Usuario</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Rol</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }} align="center">
-                      ✏️
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
+                    📱 Lista de Usuarios ({users.length})
+                  </Typography>
                   {users.map((user) => (
-                    <TableRow
-                      key={user.id}
-                      sx={{
-                        "&:hover": {
+                    <UserCard key={user.id} user={user} />
+                  ))}
+                </Box>
+              ) : (
+                // Vista desktop con tabla
+                <TableContainer
+                  component={Paper}
+                  sx={{
+                    borderRadius: 2,
+                    background: darkMode
+                      ? "rgba(255,255,255,0.05)"
+                      : "rgba(0,0,0,0.02)",
+                    border: darkMode
+                      ? "1px solid rgba(255,255,255,0.1)"
+                      : "1px solid rgba(0,0,0,0.05)",
+                  }}
+                >
+                  <Table>
+                    <TableHead>
+                      <TableRow
+                        sx={{
                           background: darkMode
-                            ? "rgba(255,255,255,0.05)"
-                            : "rgba(0,0,0,0.02)",
-                        },
-                      }}
-                    >
-                      <TableCell>
-                        <Typography
-                          variant="body2"
-                          sx={{ fontWeight: 500, color: "text.primary" }}
-                        >
-                          {user.username}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          icon={getRoleIcon(user.role)}
-                          label={user.role}
-                          color={getRoleColor(user.role)}
-                          size="small"
-                          sx={{ fontWeight: 500, textTransform: "capitalize" }}
-                        />
-                      </TableCell>
-                      <TableCell align="center">
-                        <IconButton
-                          onClick={() => handleEditUser(user)}
+                            ? "rgba(255,255,255,0.08)"
+                            : "rgba(0,0,0,0.04)",
+                        }}
+                      >
+                        <TableCell sx={{ fontWeight: 600 }}>Usuario</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>Rol</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>Estado</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }} align="center">
+                          ✏️
+                        </TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {users.map((user) => (
+                        <TableRow
+                          key={user.id}
                           sx={{
-                            color: "primary.main",
                             "&:hover": {
                               background: darkMode
-                                ? "rgba(59, 130, 246, 0.1)"
-                                : "rgba(59, 130, 246, 0.05)",
+                                ? "rgba(255,255,255,0.05)"
+                                : "rgba(0,0,0,0.02)",
                             },
                           }}
-                          title="Editar usuario"
                         >
-                          <EditIcon />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                          <TableCell>
+                            <Typography
+                              variant="body2"
+                              sx={{ fontWeight: 500, color: "text.primary" }}
+                            >
+                              {user.username}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              icon={getRoleIcon(user.role)}
+                              label={user.role}
+                              color={getRoleColor(user.role)}
+                              size="small"
+                              sx={{ fontWeight: 500, textTransform: "capitalize" }}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={user.isActive ? "Activo" : "Inactivo"}
+                              color={user.isActive ? "success" : "default"}
+                              size="small"
+                              sx={{ fontWeight: 500 }}
+                            />
+                          </TableCell>
+                          <TableCell align="center">
+                            <IconButton
+                              onClick={() => handleEditUser(user)}
+                              sx={{
+                                color: "primary.main",
+                                "&:hover": {
+                                  background: darkMode
+                                    ? "rgba(59, 130, 246, 0.1)"
+                                    : "rgba(59, 130, 246, 0.05)",
+                                },
+                              }}
+                              title="Editar usuario"
+                            >
+                              <EditIcon />
+                            </IconButton>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </>
           )}
 
           <Alert
             severity="info"
             sx={{
-              mt: 3,
+              mt: { xs: 2, sm: 3 },
               borderRadius: 2,
               background: darkMode
                 ? "rgba(59, 130, 246, 0.1)"
                 : "rgba(59, 130, 246, 0.05)",
             }}
           >
-            <Typography variant="body2">
+            <Typography variant="body2" sx={{ fontSize: { xs: '0.85rem', sm: '0.9rem' } }}>
               <strong>Nota:</strong> Si modificas un usuario administrador, la
               sesión se cerrará automáticamente por seguridad. Los usuarios
               regulares se pueden editar sin afectar la sesión actual.
+              <br />
+              <strong>API:</strong> Los datos se cargan desde el endpoint real{" "}
+              <code>/api/users/list</code>
+              <br />
+              <strong>Vista:</strong> {isMobile ? '📱 Móvil (Cards)' : '🖥️ Desktop (Tabla)'}
             </Typography>
           </Alert>
         </CardContent>
@@ -337,117 +576,126 @@ const UsersForm = () => {
         onClose={handleCloseDialog}
         maxWidth="sm"
         fullWidth
+        fullScreen={isMobile}
         PaperProps={{
           sx: {
             background: darkMode
               ? "linear-gradient(135deg, #374151 0%, #4b5563 100%)"
               : "linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)",
-            borderRadius: 2,
+            borderRadius: { xs: 0, sm: 2 },
+            m: { xs: 0, sm: 2 },
+            height: { xs: '100vh', sm: 'auto' },
+            maxHeight: { xs: '100vh', sm: '90vh' }
           },
         }}
       >
-        <DialogTitle>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            ✏️ Editar Usuario: {editingUser?.username}
+        <DialogTitle sx={{ 
+          pb: { xs: 2, sm: 2 },
+          px: { xs: 3, sm: 3 },
+          pt: { xs: 3, sm: 3 },
+          borderBottom: `1px solid ${darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+          background: darkMode ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'
+        }}>
+          <Typography variant="h6" sx={{ 
+            fontWeight: 600,
+            fontSize: { xs: '1.2rem', sm: '1.25rem' },
+            textAlign: { xs: 'center', sm: 'left' }
+          }}>
+            ✏️ Editar Usuario
+          </Typography>
+          <Typography variant="body2" sx={{ 
+            color: 'text.secondary',
+            mt: 0.5,
+            fontSize: { xs: '0.9rem', sm: '1rem' },
+            textAlign: { xs: 'center', sm: 'left' }
+          }}>
+            {editingUser?.username}
           </Typography>
         </DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
-            <TextField
-              label="Username"
-              value={formData.username}
-              onChange={(e) =>
-                setFormData({ ...formData, username: e.target.value })
-              }
-              fullWidth
-              required
-              variant="outlined"
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  background: darkMode
-                    ? "rgba(255,255,255,0.05)"
-                    : "rgba(0,0,0,0.02)",
-                },
-              }}
-            />
-            <TextField
-              label="Nueva Contraseña (opcional)"
-              type={showPassword ? "text" : "password"}
-              value={formData.password}
-              onChange={(e) =>
-                setFormData({ ...formData, password: e.target.value })
-              }
-              fullWidth
-              variant="outlined"
-              helperText="Deja vacío si no quieres cambiar la contraseña (mínimo 4 caracteres)"
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      onClick={handleTogglePasswordVisibility}
-                      edge="end"
-                      sx={{
-                        color: darkMode ? "#9ca3af" : "#6b7280",
-                        "&:hover": {
-                          color: darkMode ? "#d1d5db" : "#374151",
-                        },
-                      }}
-                    >
-                      {showPassword ? (
-                        <VisibilityOffIcon />
-                      ) : (
-                        <VisibilityIcon />
-                      )}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  background: darkMode
-                    ? "rgba(255,255,255,0.05)"
-                    : "rgba(0,0,0,0.02)",
-                },
-              }}
-            />
-            {formData.password && (
+        
+        <DialogContent sx={{ 
+          px: { xs: 3, sm: 3 },
+          py: { xs: 3, sm: 3 },
+          flex: 1,
+          overflow: 'auto'
+        }}>
+          <Box sx={{ 
+            display: "flex", 
+            flexDirection: "column", 
+            gap: { xs: 3, sm: 2.5 },
+            width: '100%'
+          }}>
+            {/* Campo Username */}
+            <Box>
+              <Typography variant="body2" sx={{ 
+                mb: 1, 
+                fontWeight: 500, 
+                color: 'text.primary',
+                fontSize: { xs: '0.9rem', sm: '1rem' }
+              }}>
+                👤 Nombre de Usuario
+              </Typography>
               <TextField
-                label="Confirmar Nueva Contraseña"
-                type={showConfirmPassword ? "text" : "password"}
-                value={formData.confirmPassword}
+                label="Username"
+                value={formData.username}
                 onChange={(e) =>
-                  setFormData({ ...formData, confirmPassword: e.target.value })
+                  setFormData({ ...formData, username: e.target.value })
                 }
                 fullWidth
                 required
                 variant="outlined"
-                error={
-                  formData.confirmPassword !== "" &&
-                  formData.password !== formData.confirmPassword
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    background: darkMode
+                      ? "rgba(255,255,255,0.05)"
+                      : "rgba(0,0,0,0.02)",
+                    fontSize: { xs: '1rem', sm: '1rem' },
+                    height: { xs: 56, sm: 56 }
+                  },
+                }}
+              />
+            </Box>
+
+            {/* Campo Nueva Contraseña */}
+            <Box>
+              <Typography variant="body2" sx={{ 
+                mb: 1, 
+                fontWeight: 500, 
+                color: 'text.primary',
+                fontSize: { xs: '0.9rem', sm: '1rem' }
+              }}>
+                🔒 Nueva Contraseña (Opcional)
+              </Typography>
+              <TextField
+                label="Nueva Contraseña"
+                type={showPassword ? "text" : "password"}
+                value={formData.password}
+                onChange={(e) =>
+                  setFormData({ ...formData, password: e.target.value })
                 }
-                helperText={
-                  formData.confirmPassword !== "" &&
-                  formData.password !== formData.confirmPassword
-                    ? "Las contraseñas no coinciden"
-                    : ""
-                }
+                fullWidth
+                variant="outlined"
+                placeholder="Deja vacío para mantener la actual"
+                helperText="Mínimo 4 caracteres. Deja vacío si no quieres cambiarla."
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
                       <IconButton
-                        onClick={handleToggleConfirmPasswordVisibility}
+                        onClick={handleTogglePasswordVisibility}
                         edge="end"
                         sx={{
                           color: darkMode ? "#9ca3af" : "#6b7280",
                           "&:hover": {
                             color: darkMode ? "#d1d5db" : "#374151",
                           },
+                          width: 48,
+                          height: 48,
                         }}
                       >
-                        {showConfirmPassword ? (
-                          <VisibilityOffIcon />
+                        {showPassword ? (
+                          <VisibilityOffIcon sx={{ fontSize: 20 }} />
                         ) : (
-                          <VisibilityIcon />
+                          <VisibilityIcon sx={{ fontSize: 20 }} />
                         )}
                       </IconButton>
                     </InputAdornment>
@@ -458,28 +706,157 @@ const UsersForm = () => {
                     background: darkMode
                       ? "rgba(255,255,255,0.05)"
                       : "rgba(0,0,0,0.02)",
+                    fontSize: { xs: '1rem', sm: '1rem' },
+                    height: { xs: 56, sm: 56 }
                   },
+                  "& .MuiFormHelperText-root": {
+                    fontSize: { xs: '0.8rem', sm: '0.8rem' },
+                    mt: 1
+                  }
                 }}
               />
+            </Box>
+
+            {/* Campo Confirmar Contraseña - Solo si hay contraseña */}
+            {formData.password && (
+              <Box>
+                <Typography variant="body2" sx={{ 
+                  mb: 1, 
+                  fontWeight: 500, 
+                  color: 'text.primary',
+                  fontSize: { xs: '0.9rem', sm: '1rem' }
+                }}>
+                  🔒 Confirmar Nueva Contraseña
+                </Typography>
+                <TextField
+                  label="Confirmar Contraseña"
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={formData.confirmPassword}
+                  onChange={(e) =>
+                    setFormData({ ...formData, confirmPassword: e.target.value })
+                  }
+                  fullWidth
+                  required
+                  variant="outlined"
+                  placeholder="Repite la nueva contraseña"
+                  error={
+                    formData.confirmPassword !== "" &&
+                    formData.password !== formData.confirmPassword
+                  }
+                  helperText={
+                    formData.confirmPassword !== "" &&
+                    formData.password !== formData.confirmPassword
+                      ? "❌ Las contraseñas no coinciden"
+                      : "✅ Confirma tu nueva contraseña"
+                  }
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          onClick={handleToggleConfirmPasswordVisibility}
+                          edge="end"
+                          sx={{
+                            color: darkMode ? "#9ca3af" : "#6b7280",
+                            "&:hover": {
+                              color: darkMode ? "#d1d5db" : "#374151",
+                            },
+                            width: 48,
+                            height: 48,
+                          }}
+                        >
+                          {showConfirmPassword ? (
+                            <VisibilityOffIcon sx={{ fontSize: 20 }} />
+                          ) : (
+                            <VisibilityIcon sx={{ fontSize: 20 }} />
+                          )}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{
+                    "& .MuiOutlinedInput-root": {
+                      background: darkMode
+                        ? "rgba(255,255,255,0.05)"
+                        : "rgba(0,0,0,0.02)",
+                      fontSize: { xs: '1rem', sm: '1rem' },
+                      height: { xs: 56, sm: 56 }
+                    },
+                    "& .MuiFormHelperText-root": {
+                      fontSize: { xs: '0.8rem', sm: '0.8rem' },
+                      mt: 1
+                    }
+                  }}
+                />
+              </Box>
             )}
+
+            {/* Información adicional */}
+            <Box sx={{ 
+              background: darkMode ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.05)',
+              border: `1px solid ${darkMode ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.1)'}`,
+              borderRadius: 2,
+              p: 2,
+              mt: 1
+            }}>
+              <Typography variant="body2" sx={{ 
+                color: 'primary.main',
+                fontSize: { xs: '0.85rem', sm: '0.9rem' },
+                lineHeight: 1.5
+              }}>
+                ℹ️ <strong>Información:</strong><br />
+                • Rol actual: <strong>{editingUser?.role}</strong><br />
+                • Estado: <strong>{editingUser?.isActive ? 'Activo' : 'Inactivo'}</strong><br />
+                • Si modificas un admin, la sesión se cerrará por seguridad
+              </Typography>
+            </Box>
           </Box>
         </DialogContent>
-        <DialogActions sx={{ p: 3, pt: 1 }}>
+        
+        <DialogActions sx={{ 
+          p: { xs: 3, sm: 3 }, 
+          pt: { xs: 2, sm: 2 },
+          gap: { xs: 2, sm: 2 },
+          flexDirection: { xs: 'column-reverse', sm: 'row' },
+          alignItems: 'stretch',
+          borderTop: `1px solid ${darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+          background: darkMode ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'
+        }}>
           <Button
             onClick={handleCloseDialog}
             variant="outlined"
-            startIcon={<CancelIcon />}
-            sx={{ borderRadius: 2 }}
+            startIcon={<CancelIcon sx={{ fontSize: 20 }} />}
+            sx={{ 
+              borderRadius: 2,
+              py: { xs: 2, sm: 1.5 },
+              fontSize: { xs: '1rem', sm: '1rem' },
+              fontWeight: 500,
+              minHeight: { xs: 56, sm: 48 },
+              flex: { xs: 1, sm: 'none' },
+              minWidth: { xs: '100%', sm: 120 }
+            }}
           >
             Cancelar
           </Button>
           <Button
             onClick={handleSaveUser}
             variant="contained"
-            startIcon={<SaveIcon />}
-            sx={{ borderRadius: 2 }}
+            startIcon={<SaveIcon sx={{ fontSize: 20 }} />}
+            disabled={loading}
+            sx={{ 
+              borderRadius: 2,
+              py: { xs: 2, sm: 1.5 },
+              fontSize: { xs: '1rem', sm: '1rem' },
+              fontWeight: 'bold',
+              minHeight: { xs: 56, sm: 48 },
+              flex: { xs: 1, sm: 'none' },
+              minWidth: { xs: '100%', sm: 150 },
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+              }
+            }}
           >
-            Guardar Cambios
+            {loading ? 'Guardando...' : 'Guardar Cambios'}
           </Button>
         </DialogActions>
       </Dialog>

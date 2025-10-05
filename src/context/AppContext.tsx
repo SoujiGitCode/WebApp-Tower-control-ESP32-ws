@@ -7,6 +7,7 @@ import {
 } from "react";
 import { auth, api, AuthUser, UserRole } from "../api/index";
 import { mockAuth, mockApi } from "../api/mockApi";
+import { getAppConfig, getDefaultConfig } from "../config/appConfig";
 
 interface AppContextProps {
   // Estados de autenticación
@@ -50,14 +51,19 @@ interface AppContextProps {
 const AppContext = createContext<AppContextProps | undefined>(undefined);
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
+  // Obtener configuración inicial
+  const defaultConfig = getDefaultConfig();
+  const appConfig = getAppConfig();
+  const isDevelopmentMode = appConfig.defaultMode === 'development';
+  
   // Estados de autenticación
   const [loggedIn, setLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
 
-  // Estados existentes
-  const [esp32IP, setEsp32IP] = useState("192.168.4.1");
+  // Estados existentes - usando configuración
+  const [esp32IP, setEsp32IP] = useState(defaultConfig.esp32IP);
   const [darkMode, setDarkMode] = useState(true);
-  const [devMode, setDevMode] = useState(true); // Por defecto en true para desarrollo
+  const [devMode, setDevMode] = useState(isDevelopmentMode);
 
   // Variables del formulario
   const [interval, setInterval] = useState(10);

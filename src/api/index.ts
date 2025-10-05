@@ -1,4 +1,5 @@
 import axios, { AxiosResponse } from "axios";
+import { getDefaultConfig } from "../config/appConfig";
 
 // ========== TIPOS Y INTERFACES ==========
 export type UserRole = "USER" | "ADMIN";
@@ -26,6 +27,53 @@ export interface TowerInfo {
 export interface WiFiConfig {
   ssid: string;
   password: string;
+}
+
+// ========== TIPOS PARA THRESHOLDS ==========
+export interface ThresholdValues {
+  low_low: number;
+  low: number;
+  high: number;
+  high_high: number;
+}
+
+export interface AlarmTimes {
+  time_low_low: number;
+  time_low: number;
+  time_high: number;
+  time_high_high: number;
+}
+
+export interface DeviceThresholdConfig {
+  device_id: number;
+  active: boolean;
+  thresholds: ThresholdValues;
+  alarm_times: AlarmTimes;
+}
+
+export interface DevicesStatusResponse {
+  devices: DeviceThresholdConfig[];
+  total_devices: number;
+}
+
+// Legacy interface para compatibilidad con setter individual
+export interface Threshold {
+  device_id: number;
+  low_low: number;
+  low: number;
+  high: number;
+  high_high: number;
+  active: boolean;
+  // Agregar campos de tiempo - solo usando time_low por ahora
+  time_low: number;
+}
+
+export interface DeviceStatus {
+  id: number;
+  name: string;
+  status: "online" | "offline" | "error";
+  last_seen?: number;
+  battery_level?: number;
 }
 
 // ========== NUEVOS TIPOS PARA MULTI-DEVICE ==========
@@ -66,8 +114,13 @@ class ApiClient {
   private baseURL: string;
   private axiosInstance;
 
-  constructor(baseURL: string = "http://192.168.4.1") {
-    this.baseURL = baseURL;
+  constructor(baseURL?: string) {
+    // Usar configuración automática si no se proporciona URL
+    const config = getDefaultConfig();
+    this.baseURL = baseURL || config.baseURL;
+    
+    console.log(`🚀 ApiClient inicializado con baseURL: ${this.baseURL}`);
+    
     this.axiosInstance = axios.create({
       baseURL: this.baseURL,
       timeout: 10000,
@@ -79,9 +132,15 @@ class ApiClient {
     // Interceptor para agregar token automáticamente
     this.axiosInstance.interceptors.request.use((config) => {
       const sessionId = this.getSessionId();
+      console.log(`🔍 Interceptor - URL: ${config.url}, SessionId: ${sessionId ? "EXISTS" : "NULL"}`);
+      
       if (sessionId && config.headers) {
         config.headers.Authorization = `Bearer ${sessionId}`;
+        console.log(`🔑 Bearer token agregado: Bearer ${sessionId.substring(0, 10)}...`);
+      } else {
+        console.log("⚠️ No se agregó Bearer token");
       }
+      
       return config;
     });
   }
@@ -310,19 +369,89 @@ class ApiClient {
   }
 
   // ========== RESET DE FÁBRICA (Solo Admin) ==========
-  async factoryReset(): Promise<ApiResponse> {
+  async factoryReset(adminPassword?: string): Promise<ApiResponse> {
     try {
+      const formData = new FormData();
+      if (adminPassword) {
+        formData.append('admin_password', adminPassword);
+      }
+      
       const response: AxiosResponse<ApiResponse> =
-        await this.axiosInstance.post(
-          "/api/factory-reset",
-          new URLSearchParams()
-        );
+        await this.axiosInstance.post("/api/factory-reset", formData);
       return response.data;
     } catch (error) {
       console.error("Error en factory reset:", error);
       return {
         status: "error",
         message: "Error al ejecutar reset de fábrica",
+      };
+    }
+  }
+
+  // ========== GESTIÓN DE THRESHOLDS ==========
+  async getThresholds(): Promise<ApiResponse<Threshold[]>> {
+    try {
+      const response: AxiosResponse<ApiResponse<Threshold[]>> =
+        await this.axiosInstance.get("/api/thresholds");
+      return response.data;
+    } catch (error) {
+      console.error("Error al obtener thresholds:", error);
+      return {
+        status: "error",
+        message: "Error al obtener thresholds",
+      };
+    }
+  }
+
+  async setThresholds(threshold: Threshold): Promise<ApiResponse> {
+    try {
+      const formData = this.createFormData({
+        device_id: threshold.device_id,
+        low_low: threshold.low_low,
+        low: threshold.low,
+        high: threshold.high,
+        high_high: threshold.high_high,
+        active: threshold.active.toString(),
+        time_low: threshold.time_low, // Agregar el campo de tiempo
+      });
+      
+      console.log("🎯 Enviando thresholds con time_low:", {
+        device_id: threshold.device_id,
+        time_low: threshold.time_low,
+        thresholds: { low_low: threshold.low_low, low: threshold.low, high: threshold.high, high_high: threshold.high_high }
+      });
+      
+      const response: AxiosResponse<ApiResponse> =
+        await this.axiosInstance.post("/api/thresholds", formData);
+      return response.data;
+    } catch (error) {
+      console.error("Error al configurar thresholds:", error);
+      return {
+        status: "error",
+        message: "Error al configurar thresholds",
+      };
+    }
+  }
+
+  // ========== ESTADO DE DISPOSITIVOS ==========
+  async getDevicesStatus(): Promise<ApiResponse<DevicesStatusResponse>> {
+    try {
+      console.log("🔍 Llamando /api/devices/status...");
+      const sessionId = this.getSessionId();
+      console.log("🔑 SessionId disponible:", sessionId ? "SÍ" : "NO");
+      
+      const response: AxiosResponse<ApiResponse<DevicesStatusResponse>> =
+        await this.axiosInstance.get("/api/devices/status");
+      
+      console.log("✅ Respuesta /api/devices/status:", response.status, response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error("❌ Error al obtener estado de dispositivos:", error);
+      console.error("❌ Status:", error.response?.status);
+      console.error("❌ Headers enviados:", error.config?.headers);
+      return {
+        status: "error",
+        message: `Error al obtener estado de dispositivos: ${error.response?.status || error.message}`,
       };
     }
   }
@@ -383,11 +512,23 @@ export const api = {
     newPassword: string
   ) => apiClient.changePassword(username, oldPassword, newPassword),
 
+  // Thresholds
+  getThresholds: () => apiClient.getThresholds(),
+  setThresholds: (threshold: Threshold) => apiClient.setThresholds(threshold),
+
+  // Dispositivos
+  getDevicesStatus: () => apiClient.getDevicesStatus(),
+
   // Sistema
-  factoryReset: () => apiClient.factoryReset(),
+  factoryReset: (adminPassword?: string) => apiClient.factoryReset(adminPassword),
 
   // Configuración
   updateBaseURL: (newIP: string) => apiClient.updateBaseURL(newIP),
+
+  // Sesión
+  getSessionId: () => apiClient.getSessionId(),
+  setSessionId: (sessionId: string) => apiClient.setSessionId(sessionId),
+  removeSessionId: () => apiClient.removeSessionId(),
 
   // WebSocket
   createWebSocketConnection: (ip?: string) =>
