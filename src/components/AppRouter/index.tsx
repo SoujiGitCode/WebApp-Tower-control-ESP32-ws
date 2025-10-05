@@ -22,6 +22,30 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+// Componente para proteger rutas que requieren rol ADMIN
+const AdminRoute = ({ children }: { children: React.ReactNode }) => {
+  const { loggedIn, isAdmin } = useAppContext();
+
+  if (!loggedIn) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!isAdmin) {
+    // Mostrar mensaje de error y redirigir
+    setTimeout(() => {
+      import("react-toastify").then(({ toast }) => {
+        toast.error("Acceso denegado: Se requieren permisos de administrador", {
+          position: "top-right",
+          autoClose: 3000,
+        });
+      });
+    }, 100);
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+};
+
 // Componente para redireccionar si ya está logueado
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
   const { loggedIn } = useAppContext();
@@ -82,13 +106,13 @@ const AppRouter = () => {
           }
         />
 
-        {/* Ruta del panel de administración */}
+        {/* Ruta del panel de administración - SOLO ADMIN */}
         <Route
           path="/admin"
           element={
-            <ProtectedRoute>
+            <AdminRoute>
               <AdminPanel />
-            </ProtectedRoute>
+            </AdminRoute>
           }
         />
 

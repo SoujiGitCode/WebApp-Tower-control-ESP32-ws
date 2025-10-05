@@ -308,10 +308,13 @@ const Dashboard = () => {
             open={Boolean(anchorEl)}
             onClose={handleMenuClose}
           >
-            <MenuItem onClick={() => navigate("/admin")}>
-              <AdminIcon sx={{ mr: 1 }} />
-              Panel de Administración
-            </MenuItem>
+            {/* Solo mostrar Panel de Administración si es admin */}
+            {isAdmin && (
+              <MenuItem onClick={() => navigate("/admin")}>
+                <AdminIcon sx={{ mr: 1 }} />
+                Panel de Administración
+              </MenuItem>
+            )}
             <MenuItem onClick={handleLogout}>
               <LogoutIcon sx={{ mr: 1 }} />
               Cerrar Sesión
