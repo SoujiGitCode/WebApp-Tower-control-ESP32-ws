@@ -21,6 +21,8 @@ import {
   AdminPanelSettings as AdminIcon,
   Person as PersonIcon,
   Timeline as RealtimeIcon,
+  Brightness4 as DarkModeIcon,
+  Brightness7 as LightModeIcon,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { useAppContext } from "../../context/AppContext";
@@ -198,7 +200,7 @@ const DeviceCard = ({ device, deviceConfig, isLoadingValues = false }: DeviceCar
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { currentUser, logout, isAdmin, currentApi, devMode, esp32IP } =
+  const { currentUser, logout, isAdmin, currentApi, devMode, esp32IP, darkMode, setDarkMode } =
     useAppContext();
   // Separar estados: devices iniciales vs datos en tiempo real
   const [devicesConfig, setDevicesConfig] = useState<DeviceThresholdConfig[] | null>(null);
@@ -441,6 +443,20 @@ const Dashboard = () => {
               "& .MuiChip-icon": { color: "white" },
             }}
           />
+
+          {/* Toggle Dark/Light Mode */}
+          <IconButton
+            onClick={() => setDarkMode(!darkMode)}
+            sx={{
+              color: "white",
+              mr: 1,
+              "&:hover": {
+                backgroundColor: "rgba(255, 255, 255, 0.1)",
+              },
+            }}
+          >
+            {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
+          </IconButton>
 
           <IconButton color="inherit" onClick={handleMenuOpen}>
             <MoreIcon />

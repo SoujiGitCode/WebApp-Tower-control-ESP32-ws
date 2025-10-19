@@ -18,6 +18,8 @@ import PersonIcon from "@mui/icons-material/Person";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import Brightness4Icon from "@mui/icons-material/Brightness4";
+import Brightness7Icon from "@mui/icons-material/Brightness7";
 import { useNavigate } from "react-router-dom";
 import TowerInfoForm from "../../components/Tabs/TowerInfoForm";
 import WiFiForm from "../../components/Tabs/WiFiForm";
@@ -28,7 +30,7 @@ import { toast } from "react-toastify";
 
 const AdminPanel = () => {
   const navigate = useNavigate();
-  const { loggedIn, logout, currentUser, isAdmin, darkMode } = useAppContext();
+  const { loggedIn, logout, currentUser, isAdmin, darkMode, setDarkMode } = useAppContext();
   const [selectedTab, setSelectedTab] = useState(0);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
@@ -134,6 +136,20 @@ const AdminPanel = () => {
               }}
             />
           </Box>
+
+          {/* Toggle Dark/Light Mode */}
+          <IconButton
+            onClick={() => setDarkMode(!darkMode)}
+            sx={{
+              color: "white",
+              mr: 1,
+              "&:hover": {
+                backgroundColor: "rgba(255, 255, 255, 0.2)",
+              },
+            }}
+          >
+            {darkMode ? <Brightness7Icon /> : <Brightness4Icon />}
+          </IconButton>
 
           <IconButton edge="end" color="inherit" onClick={handleMenuOpen}>
             <MoreVertIcon />

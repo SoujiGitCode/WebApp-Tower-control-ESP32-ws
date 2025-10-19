@@ -8,6 +8,7 @@ import {
 import { auth, api, AuthUser, UserRole } from "../api/index";
 import { mockAuth, mockApi } from "../api/mockApi";
 import { getAppConfig, getDefaultConfig } from "../config/appConfig";
+import { useSessionTimeout } from "../hooks/useSessionTimeout";
 
 interface AppContextProps {
   // Estados de autenticación
@@ -56,9 +57,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const appConfig = getAppConfig();
   const isDevelopmentMode = appConfig.defaultMode === 'development';
   
-  // Estados de autenticación
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  // Seleccionar auth según el modo (necesario ANTES de los estados)
+  const currentAuth = isDevelopmentMode ? mockAuth : auth;
+  
+  // Estados de autenticación - INICIALIZAR desde la sesión existente
+  const [loggedIn, setLoggedIn] = useState(() => currentAuth.isLoggedIn());
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => currentAuth.getCurrentUser());
 
   // Estados existentes - usando configuración
   const [esp32IP, setEsp32IP] = useState(defaultConfig.esp32IP);
@@ -77,8 +81,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const isAdmin = currentUser?.role === "ADMIN";
   const isUser = currentUser?.role === "USER";
 
-  // Seleccionar API según el modo
-  const currentAuth = devMode ? mockAuth : auth;
+  // Seleccionar API según el modo (usa currentAuth definido arriba)
   const currentApi = devMode ? mockApi : api;
 
   // Función de login
@@ -89,6 +92,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     try {
       const response = await currentAuth.login(username, password);
       if (response.status === "success") {
+        // Iniciar sesión en localStorage ANTES de setLoggedIn
+        const sessionStart = Date.now();
+        localStorage.setItem('session_start_time', sessionStart.toString());
+        console.log('🔑 Login exitoso - session_start_time guardado:', sessionStart);
+        
         setLoggedIn(true);
         setCurrentUser(currentAuth.getCurrentUser());
         return true;
@@ -106,6 +114,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setLoggedIn(false);
     setCurrentUser(null);
   };
+
+  // Hook de timeout de sesión - MODO PRUEBA (2 minutos)
+  // TODO: Cambiar a 30 minutos en producción
+  useSessionTimeout({
+    isLoggedIn: loggedIn,
+    logout: logout,
+    sessionDuration: 2 * 60 * 1000, // 2 minutos para pruebas (cambiar a 30 * 60 * 1000 en producción)
+    warningTime: 1 * 60 * 1000, // Advertencia 1 minuto antes (60 segundos) (cambiar a 2 * 60 * 1000 en producción)
+  });
 
   // Verificar sesión al cargar la aplicación
   useEffect(() => {

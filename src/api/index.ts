@@ -1,5 +1,6 @@
 import axios, { AxiosResponse } from "axios";
 import { getDefaultConfig } from "../config/appConfig";
+import Swal from "sweetalert2";
 
 // ========== TIPOS Y INTERFACES ==========
 export type UserRole = "USER" | "ADMIN";
@@ -142,6 +143,47 @@ class ApiClient {
       }
       
       return config;
+    });
+
+    // Interceptor para detectar sesión expirada desde el backend
+    this.axiosInstance.interceptors.response.use(
+      (response) => {
+        // Verificar si la respuesta indica sesión expirada
+        if (response.data?.session_expired === true) {
+          console.error('🚨 Sesión expirada detectada desde el backend');
+          this.handleSessionExpired();
+        }
+        return response;
+      },
+      (error) => {
+        // Verificar si el error indica sesión expirada
+        if (error.response?.data?.session_expired === true) {
+          console.error('🚨 Sesión expirada detectada en error desde el backend');
+          this.handleSessionExpired();
+        }
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  // ========== MANEJO DE SESIÓN EXPIRADA ==========
+  private handleSessionExpired(): void {
+    // Limpiar sesión local
+    this.removeSessionId();
+    this.removeCurrentUser();
+
+    // Mostrar alerta al usuario
+    Swal.fire({
+      icon: 'warning',
+      title: '🔐 Sesión Expirada',
+      text: 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.',
+      confirmButtonText: 'Ir a Login',
+      confirmButtonColor: '#ef4444',
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+    }).then(() => {
+      // Redirigir a login después de cerrar la alerta
+      window.location.href = '/login';
     });
   }
 

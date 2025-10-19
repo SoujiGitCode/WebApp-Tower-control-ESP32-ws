@@ -18,6 +18,8 @@ import {
 import {
   ArrowBack as BackIcon,
   Settings as SettingsIcon,
+  Brightness4 as DarkModeIcon,
+  Brightness7 as LightModeIcon,
 } from "@mui/icons-material";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAppContext } from "../../context/AppContext";
@@ -39,7 +41,7 @@ const RealTimeData = () => {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { darkMode, currentApi, devMode, esp32IP, isAdmin } = useAppContext();
+  const { darkMode, setDarkMode, currentApi, devMode, esp32IP, isAdmin } = useAppContext();
 
   // Estados optimizados para mejor rendimiento mobile
   const [devicesData, setDevicesData] = useState<Device[]>([]);
@@ -802,6 +804,22 @@ const RealTimeData = () => {
               ID: {currentDevice.id} • Monitoreo en Tiempo Real
             </Typography>
           </Box>
+          {/* Toggle Dark/Light Mode */}
+          <IconButton
+            onClick={() => setDarkMode(!darkMode)}
+            sx={{
+              color: "text.primary",
+              bgcolor: darkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
+              mr: 1,
+              "&:hover": {
+                bgcolor: darkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)",
+                transform: "scale(1.05)",
+              },
+              transition: "all 0.2s ease",
+            }}
+          >
+            {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
+          </IconButton>
           {/* Botón de configuración - Solo para administradores */}
           {isAdmin && (
             <IconButton

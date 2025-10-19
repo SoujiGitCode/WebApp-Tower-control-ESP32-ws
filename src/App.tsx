@@ -4,6 +4,7 @@ import { ToastContainer } from "react-toastify";
 import { useAppContext } from "./context/AppContext";
 import AppRouter from "./components/AppRouter";
 import DevModeIndicator from "./components/DevModeIndicator";
+import SessionTimeoutDebug from "./components/SessionTimeoutDebug";
 import "react-toastify/dist/ReactToastify.css";
 
 const App = () => {
@@ -127,24 +128,31 @@ const App = () => {
     <ThemeProvider theme={theme}>
       <CssBaseline />
 
-      {/* Toast notifications */}
-      <ToastContainer
-        position="top-right"
-        autoClose={5000}
-        hideProgressBar={false}
-        newestOnTop={false}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-      />
-
       {/* Main application router */}
       <AppRouter />
 
       {/* Dev mode indicator */}
       <DevModeIndicator />
+
+      {/* Session timeout debug indicator (SOLO PARA DESARROLLO) */}
+      {/* Comentar o eliminar en producción */}
+      <SessionTimeoutDebug />
+      
+      {/* Toast notifications - Fuera del contenido para que se vea correctamente */}
+      <ToastContainer
+        position="top-center"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={true}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme={darkMode ? "dark" : "light"}
+        limit={3}
+        style={{ zIndex: 9999 }}
+      />
     </ThemeProvider>
   );
 };
