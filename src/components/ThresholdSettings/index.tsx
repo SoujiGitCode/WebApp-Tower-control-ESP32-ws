@@ -77,8 +77,12 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
       const response = await currentApi.getThresholds();
       
       if (response.status === 'success' && response.data) {
-        // La respuesta puede ser un array de Thresholds
-        const thresholdsArray = response.data as any;
+        // La respuesta tiene estructura: data.thresholds (array)
+        const responseData = response.data as any;
+        const thresholdsArray = responseData.thresholds || response.data;
+        
+        console.log('📦 Respuesta completa:', response.data);
+        console.log('📋 Thresholds array:', thresholdsArray);
         
         // Buscar el threshold del dispositivo actual
         const deviceThreshold = Array.isArray(thresholdsArray) 
@@ -87,7 +91,8 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
         
         if (deviceThreshold) {
           console.log('✅ Thresholds encontrados:', deviceThreshold);
-          setActive(deviceThreshold.active !== false); // Por defecto true si no está definido
+          // Siempre permitir edición (el switch de active está comentado)
+          setActive(true);
           setThresholds({
             low_low: deviceThreshold.low_low,
             low: deviceThreshold.low,
@@ -95,6 +100,7 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
             high_high: deviceThreshold.high_high,
           });
           setWindowMinutes(deviceThreshold.window_minutes || 3);
+          console.log('✅ Window minutes seteado a:', deviceThreshold.window_minutes || 3);
         } else {
           console.log('⚠️ No se encontró configuración para este device, usando valores por defecto');
           // Mantener los valores por defecto del estado inicial
@@ -428,6 +434,9 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
                 onChange={(e) => handleWindowMinutesChange(Number(e.target.value))}
                 disabled={!active || loadingData}
                 helperText="Tiempo en minutos para evaluar el promedio de las lecturas"
+                SelectProps={{
+                  displayEmpty: true,
+                }}
                 sx={{
                   '& .MuiInputBase-root': {
                     height: { xs: 56, sm: 56 }

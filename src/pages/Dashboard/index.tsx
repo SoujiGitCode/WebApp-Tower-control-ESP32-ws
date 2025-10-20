@@ -358,20 +358,6 @@ const Dashboard = () => {
             }}
           />
 
-          {/* Toggle Dark/Light Mode */}
-          <IconButton
-            onClick={() => setDarkMode(!darkMode)}
-            sx={{
-              color: "white",
-              mr: 1,
-              "&:hover": {
-                backgroundColor: "rgba(255, 255, 255, 0.1)",
-              },
-            }}
-          >
-            {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
-          </IconButton>
-
           <IconButton color="inherit" onClick={handleMenuOpen}>
             <MoreIcon />
           </IconButton>
@@ -381,6 +367,11 @@ const Dashboard = () => {
             open={Boolean(anchorEl)}
             onClose={handleMenuClose}
           >
+            {/* Cambiar tema */}
+            <MenuItem onClick={() => { setDarkMode(!darkMode); handleMenuClose(); }}>
+              {darkMode ? <LightModeIcon sx={{ mr: 1 }} /> : <DarkModeIcon sx={{ mr: 1 }} />}
+              {darkMode ? 'Modo Claro' : 'Modo Oscuro'}
+            </MenuItem>
             {/* Solo mostrar Panel de Administración si es admin */}
             {isAdmin && (
               <MenuItem onClick={() => navigate("/admin")}>

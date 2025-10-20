@@ -452,22 +452,6 @@ const RealTimeData = () => {
               <SettingsIcon />
             </IconButton>
           )}
-          {/* Toggle Dark/Light Mode */}
-          <IconButton
-            onClick={() => setDarkMode(!darkMode)}
-            sx={{
-              color: "text.primary",
-              bgcolor: darkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
-              mr: 1,
-              "&:hover": {
-                bgcolor: darkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)",
-                transform: "scale(1.05)",
-              },
-              transition: "all 0.2s ease",
-            }}
-          >
-            {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
-          </IconButton>
 
           {/* Menú de opciones */}
           <IconButton
@@ -498,6 +482,11 @@ const RealTimeData = () => {
               horizontal: 'right',
             }}
           >
+            {/* Cambiar tema */}
+            <MenuItem onClick={() => { setDarkMode(!darkMode); handleMenuClose(); }}>
+              {darkMode ? <LightModeIcon sx={{ mr: 1 }} /> : <DarkModeIcon sx={{ mr: 1 }} />}
+              {darkMode ? 'Modo Claro' : 'Modo Oscuro'}
+            </MenuItem>
             {/* Solo mostrar Panel de Administración si es admin */}
             {isAdmin && (
               <MenuItem onClick={handleAdminPanel}>
