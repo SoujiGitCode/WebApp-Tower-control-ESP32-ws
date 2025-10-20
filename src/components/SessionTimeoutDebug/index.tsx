@@ -12,8 +12,8 @@ const SESSION_START_KEY = 'session_start_time';
 const SessionTimeoutDebug = () => {
   const { loggedIn } = useAppContext();
   const [sessionTime, setSessionTime] = useState(0);
-  const SESSION_DURATION = 2 * 60; // 2 minutos en segundos (PRUEBA)
-  const WARNING_TIME = 1 * 60; // 1 minuto en segundos (60 seg)
+  const SESSION_DURATION = 30 * 60; // 30 minutos en segundos
+  const WARNING_TIME = 2 * 60; // 2 minutos en segundos (advertencia a los 28 minutos)
 
   useEffect(() => {
     if (!loggedIn) {

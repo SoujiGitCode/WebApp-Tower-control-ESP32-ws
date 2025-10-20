@@ -65,8 +65,8 @@ export interface Threshold {
   high: number;
   high_high: number;
   active: boolean;
-  // Agregar campos de tiempo - solo usando time_low por ahora
-  time_low: number;
+  window_minutes?: number; // Ventana de tiempo en minutos
+  time_low?: number; // Mantener por compatibilidad (deprecated)
 }
 
 export interface DeviceStatus {
@@ -78,20 +78,29 @@ export interface DeviceStatus {
 }
 
 // ========== NUEVOS TIPOS PARA MULTI-DEVICE ==========
-export interface Device {
+export interface Sensor {
   id: number;
-  unit_symbol: string;
-  unit_name: string;
-  Norte: number;
-  Sur: number;
-  Este: number;
-  Oeste: number;
+  name: string; // "Alfa", "Beta", "Gamma" o "Norte", "Sur", "Este", "Oeste"
+  value: number;
+  alarm_triggered: boolean;
+}
+
+export interface Device {
+  device_id: number;
+  units: string; // "newtons", "kg", etc
+  device_config: "3_sensores" | "4_sensores";
+  sensors: Sensor[];
+}
+
+export interface Statistics {
+  total_devices: number;
+  connected_clients: number;
+  total_alarms: number;
 }
 
 export interface DevicesData {
   devices: Device[];
-  total_devices: number;
-  timestamp: number;
+  statistics: Statistics;
 }
 
 export interface ApiResponse<T = any> {
@@ -454,13 +463,18 @@ class ApiClient {
         high: threshold.high,
         high_high: threshold.high_high,
         active: threshold.active.toString(),
-        time_low: threshold.time_low, // Agregar el campo de tiempo
+        window_minutes: threshold.window_minutes || 3,
       });
       
-      console.log("🎯 Enviando thresholds con time_low:", {
+      console.log("🎯 Enviando thresholds:", {
         device_id: threshold.device_id,
-        time_low: threshold.time_low,
-        thresholds: { low_low: threshold.low_low, low: threshold.low, high: threshold.high, high_high: threshold.high_high }
+        window_minutes: threshold.window_minutes || 3,
+        thresholds: { 
+          low_low: threshold.low_low, 
+          low: threshold.low, 
+          high: threshold.high, 
+          high_high: threshold.high_high 
+        }
       });
       
       const response: AxiosResponse<ApiResponse> =

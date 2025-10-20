@@ -44,18 +44,21 @@ export const RadarChart = ({ device, darkMode }: RadarChartProps) => {
     const ctx = chartRef.current.getContext("2d");
     if (!ctx) return;
 
+    // Obtener labels dinámicamente
+    const labels = device.sensors.map(sensor => sensor.name);
+    
     chartInstanceRef.current = new Chart(ctx, {
       type: "radar",
       data: {
-        labels: ["Norte", "Este", "Sur", "Oeste"],
+        labels: labels,
         datasets: [
           {
             label: "Tensión",
-            data: [0, 0, 0, 0], // Iniciamos en ceros
+            data: device.sensors.map(() => 0), // Iniciamos en ceros
             backgroundColor: "rgba(59, 130, 246, 0.25)",
             borderColor: "rgba(59, 130, 246, 1)",
             borderWidth: 3,
-            pointBackgroundColor: ["#22c55e", "#22c55e", "#22c55e", "#22c55e"],
+            pointBackgroundColor: device.sensors.map(() => "#22c55e"),
             pointBorderColor: "#fff",
             pointBorderWidth: 3,
             pointRadius: 8,
@@ -63,7 +66,7 @@ export const RadarChart = ({ device, darkMode }: RadarChartProps) => {
           },
           {
             label: "Crítico (2000N)",
-            data: [2000, 2000, 2000, 2000],
+            data: device.sensors.map(() => 2000),
             backgroundColor: "rgba(239, 68, 68, 0.05)",
             borderColor: "rgba(239, 68, 68, 0.6)",
             borderWidth: 2,
@@ -72,7 +75,7 @@ export const RadarChart = ({ device, darkMode }: RadarChartProps) => {
           },
           {
             label: "Alerta (1500N)",
-            data: [1500, 1500, 1500, 1500],
+            data: device.sensors.map(() => 1500),
             backgroundColor: "transparent",
             borderColor: "rgba(245, 158, 11, 0.5)",
             borderWidth: 2,
@@ -124,7 +127,7 @@ export const RadarChart = ({ device, darkMode }: RadarChartProps) => {
               backdropColor: "transparent",
               font: {
                 size: 11,
-                weight: "600",
+                weight: 600,
               },
             },
             grid: {
@@ -152,7 +155,7 @@ export const RadarChart = ({ device, darkMode }: RadarChartProps) => {
         chartInstanceRef.current = null;
       }
     };
-  }, [darkMode]);
+  }, [darkMode, device.sensors.length]); // Incluir sensors.length para re-crear si cambia
 
   // Actualizar solo los datos cuando cambien los valores del device
   useEffect(() => {
@@ -161,66 +164,57 @@ export const RadarChart = ({ device, darkMode }: RadarChartProps) => {
     const chart = chartInstanceRef.current;
 
     // Actualizar los datos
-    chart.data.datasets[0].data = [
-      device.Norte,
-      device.Este,
-      device.Sur,
-      device.Oeste,
-    ];
+    chart.data.datasets[0].data = device.sensors.map(sensor => sensor.value);
 
-    // Actualizar los colores de los puntos
-    chart.data.datasets[0].pointBackgroundColor = [
-      getCableColor(device.Norte),
-      getCableColor(device.Este),
-      getCableColor(device.Sur),
-      getCableColor(device.Oeste),
-    ];
+    // Actualizar los colores de los puntos (con type assertion para ChartJS)
+    const dataset = chart.data.datasets[0] as any;
+    dataset.pointBackgroundColor = device.sensors.map(sensor => getCableColor(sensor.value));
 
     // Actualizar el gráfico con animación
     chart.update();
-  }, [device.Norte, device.Este, device.Sur, device.Oeste]);
+  }, [device.sensors]);
 
   return (
     <Box>
-      {/* Valores de cada dirección arriba del gráfico */}
+      {/* Valores de cada sensor arriba del gráfico */}
       <Box
         sx={{
           display: "grid",
-          gridTemplateColumns: "repeat(2, 1fr)",
+          gridTemplateColumns: device.device_config === "3_sensores" ? "repeat(3, 1fr)" : "repeat(2, 1fr)",
           gap: 1.5,
           mb: 2,
         }}
       >
-        {[
-          { name: "Norte", value: device.Norte },
-          { name: "Este", value: device.Este },
-          { name: "Sur", value: device.Sur },
-          { name: "Oeste", value: device.Oeste },
-        ].map((cable) => (
+        {device.sensors.map((sensor) => (
           <Box
-            key={cable.name}
+            key={sensor.id}
             sx={{
               p: 1.5,
               borderRadius: 2,
               background: darkMode
                 ? "rgba(255,255,255,0.05)"
                 : "rgba(0,0,0,0.03)",
-              border: `2px solid ${getCableColor(cable.value)}`,
+              border: `2px solid ${sensor.alarm_triggered ? "#ef4444" : getCableColor(sensor.value)}`,
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
               transition: "all 0.3s ease",
+              animation: sensor.alarm_triggered ? 'pulse 1.5s infinite' : 'none',
+              "@keyframes pulse": {
+                "0%, 100%": { opacity: 1 },
+                "50%": { opacity: 0.7 },
+              },
             }}
           >
             <Typography variant="body2" fontWeight="600">
-              {cable.name}
+              {sensor.name}
             </Typography>
             <Typography
               variant="h6"
               fontWeight="700"
-              sx={{ color: getCableColor(cable.value) }}
+              sx={{ color: sensor.alarm_triggered ? "#ef4444" : getCableColor(sensor.value) }}
             >
-              {cable.value}N
+              {sensor.value} {device.units}
             </Typography>
           </Box>
         ))}

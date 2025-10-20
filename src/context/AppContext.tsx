@@ -115,13 +115,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setCurrentUser(null);
   };
 
-  // Hook de timeout de sesión - MODO PRUEBA (2 minutos)
-  // TODO: Cambiar a 30 minutos en producción
+  // Hook de timeout de sesión - PRODUCCIÓN (30 minutos)
   useSessionTimeout({
     isLoggedIn: loggedIn,
     logout: logout,
-    sessionDuration: 2 * 60 * 1000, // 2 minutos para pruebas (cambiar a 30 * 60 * 1000 en producción)
-    warningTime: 1 * 60 * 1000, // Advertencia 1 minuto antes (60 segundos) (cambiar a 2 * 60 * 1000 en producción)
+    sessionDuration: 30 * 60 * 1000, // 30 minutos
+    warningTime: 2 * 60 * 1000, // Advertencia 2 minutos antes
   });
 
   // Verificar sesión al cargar la aplicación

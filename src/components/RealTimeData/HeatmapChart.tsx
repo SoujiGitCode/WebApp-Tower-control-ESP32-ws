@@ -16,12 +16,28 @@ export const HeatmapChart = ({ device, darkMode }: HeatmapChartProps) => {
     return { bg: "#F44336", text: "CRÍTICO" };
   };
 
-  const cables = [
-    { name: "Norte", value: device.Norte, position: "top" },
-    { name: "Este", value: device.Este, position: "right" },
-    { name: "Sur", value: device.Sur, position: "bottom" },
-    { name: "Oeste", value: device.Oeste, position: "left" },
-  ];
+  const has3Sensors = device.device_config === "3_sensores";
+
+  // Obtener posiciones para 3 sensores (triángulo)
+  const get3SensorPositions = () => {
+    return [
+      { angle: -90, x: 50, y: 0 },   // Top (Alfa)
+      { angle: 150, x: 0, y: 78 },   // Bottom Left (Beta)
+      { angle: 30, x: 100, y: 78 },  // Bottom Right (Gamma)
+    ];
+  };
+
+  // Obtener posiciones para 4 sensores (cruz)
+  const get4SensorPositions = () => {
+    return [
+      { angle: -90, x: 50, y: 0 },   // Top (Norte)
+      { angle: 0, x: 100, y: 50 },   // Right (Este)
+      { angle: 90, x: 50, y: 100 },  // Bottom (Sur)
+      { angle: 180, x: 0, y: 50 },   // Left (Oeste)
+    ];
+  };
+
+  const positions = has3Sensors ? get3SensorPositions() : get4SensorPositions();
 
   return (
     <Box
@@ -68,241 +84,80 @@ export const HeatmapChart = ({ device, darkMode }: HeatmapChartProps) => {
           />
         </Box>
 
-        {/* Cable Norte */}
-        <Box
-          sx={{
-            position: "absolute",
-            top: 0,
-            left: "50%",
-            transform: "translateX(-50%)",
-            width: 90,
-          }}
-        >
-          <Box
-            sx={{
-              background: `linear-gradient(135deg, ${
-                getHeatColor(device.Norte).bg
-              } 0%, ${getHeatColor(device.Norte).bg}dd 100%)`,
-              borderRadius: 3,
-              p: 1.5,
-              textAlign: "center",
-              boxShadow: `0 4px 20px ${getHeatColor(device.Norte).bg}88`,
-              border: `2px solid ${getHeatColor(device.Norte).bg}`,
-              transition: "all 0.3s ease",
-              cursor: "pointer",
-              "&:hover": {
-                transform: "scale(1.08) translateY(-4px)",
-                boxShadow: `0 8px 30px ${getHeatColor(device.Norte).bg}aa`,
-              },
-            }}
-          >
-            <Typography
-              variant="caption"
+        {/* Renderizar sensores dinámicamente */}
+        {device.sensors.map((sensor, index) => {
+          const pos = positions[index];
+          const heatColor = getHeatColor(sensor.value);
+          
+          return (
+            <Box
+              key={sensor.id}
               sx={{
-                color: "white",
-                fontWeight: 700,
-                fontSize: "0.65rem",
-                display: "block",
+                position: "absolute",
+                left: `${pos.x}%`,
+                top: `${pos.y}%`,
+                transform: "translate(-50%, -50%)",
+                width: 90,
               }}
             >
-              NORTE
-            </Typography>
-            <Typography
-              variant="h5"
-              sx={{ color: "white", fontWeight: 800, my: 0.5 }}
-            >
-              {device.Norte}
-            </Typography>
-            <Typography
-              variant="caption"
-              sx={{
-                color: "white",
-                fontSize: "0.6rem",
-                opacity: 0.95,
-                display: "block",
-              }}
-            >
-              Newtons
-            </Typography>
-          </Box>
-        </Box>
-
-        {/* Cable Sur */}
-        <Box
-          sx={{
-            position: "absolute",
-            bottom: 0,
-            left: "50%",
-            transform: "translateX(-50%)",
-            width: 90,
-          }}
-        >
-          <Box
-            sx={{
-              background: `linear-gradient(135deg, ${
-                getHeatColor(device.Sur).bg
-              } 0%, ${getHeatColor(device.Sur).bg}dd 100%)`,
-              borderRadius: 3,
-              p: 1.5,
-              textAlign: "center",
-              boxShadow: `0 4px 20px ${getHeatColor(device.Sur).bg}88`,
-              border: `2px solid ${getHeatColor(device.Sur).bg}`,
-              transition: "all 0.3s ease",
-              cursor: "pointer",
-              "&:hover": {
-                transform: "scale(1.08) translateY(4px)",
-                boxShadow: `0 8px 30px ${getHeatColor(device.Sur).bg}aa`,
-              },
-            }}
-          >
-            <Typography
-              variant="caption"
-              sx={{
-                color: "white",
-                fontWeight: 700,
-                fontSize: "0.65rem",
-                display: "block",
-              }}
-            >
-              SUR
-            </Typography>
-            <Typography
-              variant="h5"
-              sx={{ color: "white", fontWeight: 800, my: 0.5 }}
-            >
-              {device.Sur}
-            </Typography>
-            <Typography
-              variant="caption"
-              sx={{
-                color: "white",
-                fontSize: "0.6rem",
-                opacity: 0.95,
-                display: "block",
-              }}
-            >
-              Newtons
-            </Typography>
-          </Box>
-        </Box>
-
-        {/* Cable Este */}
-        <Box
-          sx={{
-            position: "absolute",
-            right: 0,
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: 90,
-          }}
-        >
-          <Box
-            sx={{
-              background: `linear-gradient(135deg, ${
-                getHeatColor(device.Este).bg
-              } 0%, ${getHeatColor(device.Este).bg}dd 100%)`,
-              borderRadius: 3,
-              p: 1.5,
-              textAlign: "center",
-              boxShadow: `0 4px 20px ${getHeatColor(device.Este).bg}88`,
-              border: `2px solid ${getHeatColor(device.Este).bg}`,
-              transition: "all 0.3s ease",
-              cursor: "pointer",
-              "&:hover": {
-                transform: "scale(1.08) translateX(4px)",
-                boxShadow: `0 8px 30px ${getHeatColor(device.Este).bg}aa`,
-              },
-            }}
-          >
-            <Typography
-              variant="caption"
-              sx={{
-                color: "white",
-                fontWeight: 700,
-                fontSize: "0.65rem",
-                display: "block",
-              }}
-            >
-              ESTE
-            </Typography>
-            <Typography
-              variant="h5"
-              sx={{ color: "white", fontWeight: 800, my: 0.5 }}
-            >
-              {device.Este}
-            </Typography>
-            <Typography
-              variant="caption"
-              sx={{
-                color: "white",
-                fontSize: "0.6rem",
-                opacity: 0.95,
-                display: "block",
-              }}
-            >
-              Newtons
-            </Typography>
-          </Box>
-        </Box>
-
-        {/* Cable Oeste */}
-        <Box
-          sx={{
-            position: "absolute",
-            left: 0,
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: 90,
-          }}
-        >
-          <Box
-            sx={{
-              background: `linear-gradient(135deg, ${
-                getHeatColor(device.Oeste).bg
-              } 0%, ${getHeatColor(device.Oeste).bg}dd 100%)`,
-              borderRadius: 3,
-              p: 1.5,
-              textAlign: "center",
-              boxShadow: `0 4px 20px ${getHeatColor(device.Oeste).bg}88`,
-              border: `2px solid ${getHeatColor(device.Oeste).bg}`,
-              transition: "all 0.3s ease",
-              cursor: "pointer",
-              "&:hover": {
-                transform: "scale(1.08) translateX(-4px)",
-                boxShadow: `0 8px 30px ${getHeatColor(device.Oeste).bg}aa`,
-              },
-            }}
-          >
-            <Typography
-              variant="caption"
-              sx={{
-                color: "white",
-                fontWeight: 700,
-                fontSize: "0.65rem",
-                display: "block",
-              }}
-            >
-              OESTE
-            </Typography>
-            <Typography
-              variant="h5"
-              sx={{ color: "white", fontWeight: 800, my: 0.5 }}
-            >
-              {device.Oeste}
-            </Typography>
-            <Typography
-              variant="caption"
-              sx={{
-                color: "white",
-                fontSize: "0.6rem",
-                opacity: 0.95,
-                display: "block",
-              }}
-            >
-              Newtons
-            </Typography>
-          </Box>
-        </Box>
+              <Box
+                sx={{
+                  background: `linear-gradient(135deg, ${heatColor.bg} 0%, ${heatColor.bg}dd 100%)`,
+                  borderRadius: 3,
+                  p: 1.5,
+                  textAlign: "center",
+                  boxShadow: sensor.alarm_triggered 
+                    ? `0 0 20px ${heatColor.bg}, 0 4px 20px ${heatColor.bg}88`
+                    : `0 4px 20px ${heatColor.bg}88`,
+                  border: sensor.alarm_triggered
+                    ? `3px solid ${heatColor.bg}`
+                    : `2px solid ${heatColor.bg}`,
+                  transition: "all 0.3s ease",
+                  cursor: "pointer",
+                  animation: sensor.alarm_triggered ? 'pulse 1.5s infinite' : 'none',
+                  "@keyframes pulse": {
+                    "0%, 100%": { transform: "scale(1)" },
+                    "50%": { transform: "scale(1.05)" },
+                  },
+                  "&:hover": {
+                    transform: "scale(1.08)",
+                    boxShadow: `0 8px 30px ${heatColor.bg}aa`,
+                  },
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: "white",
+                    fontWeight: 700,
+                    fontSize: "0.65rem",
+                    display: "block",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {sensor.name}
+                </Typography>
+                <Typography
+                  variant="h5"
+                  sx={{ color: "white", fontWeight: 800, my: 0.5 }}
+                >
+                  {sensor.value}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: "white",
+                    fontSize: "0.6rem",
+                    opacity: 0.95,
+                    display: "block",
+                  }}
+                >
+                  {device.units}
+                </Typography>
+              </Box>
+            </Box>
+          );
+        })}
       </Box>
 
       {/* Escala de intensidad mejorada */}

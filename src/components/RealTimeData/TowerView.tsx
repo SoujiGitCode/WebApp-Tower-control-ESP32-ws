@@ -1,94 +1,42 @@
 import { Box, Typography } from "@mui/material";
 import { CellTower as TowerIcon } from "@mui/icons-material";
-import { Device } from "../../api/index";
+import { Device, Sensor } from "../../api/index";
 
 interface TowerViewProps {
   device: Device;
   darkMode: boolean;
-  deviceConfig?: {
-    thresholds?: {
-      low_low: number;
-      low: number;
-      high: number;
-      high_high: number;
-    };
-    active?: boolean;
-  };
-  getCableAlarmState?: (deviceId: number, cable: string) => any;
 }
 
-export const TowerView = ({ device, darkMode, deviceConfig, getCableAlarmState }: TowerViewProps) => {
-  const getCableColor = (force: number, cableName?: string) => {
-    // Primero evaluar usando thresholds instantáneos (siempre)
-    if (deviceConfig?.thresholds) {
-      const { low_low, low, high, high_high } = deviceConfig.thresholds;
-      
-      // Crítico: menor o igual a low_low O mayor o igual a high_high
-      if (force <= low_low || force >= high_high) return "#ef4444"; // Crítico - Rojo
-      
-      // Alerta: entre low_low y low O entre high y high_high
-      if ((force > low_low && force <= low) || (force >= high && force < high_high)) return "#f59e0b"; // Alerta - Amarillo
-      
-      // Normal: entre low y high
-      return "#22c55e"; // Normal - Verde
-    }
-
-    // Si tenemos sistema de alarmas activo y hay una alarma, usar colores de alarma
-    if (cableName && getCableAlarmState && deviceConfig?.active) {
-      const alarmState = getCableAlarmState(device.id, cableName);
-      if (alarmState.isActive) {
-        switch (alarmState.type) {
-          case 'low_low':
-          case 'high_high':
-            return "#ef4444"; // Crítico/Alarma - Rojo
-          case 'low':
-          case 'high':
-            return "#f59e0b"; // Alerta - Amarillo
-          default:
-            break;
-        }
-      }
-    }
-
-    // Fallback a lógica anterior cuando no hay configuración de thresholds
-    if (force < 1500) return "#22c55e"; // Normal - Verde
-    if (force < 2000) return "#f59e0b"; // Alerta - Amarillo
-    return "#ef4444"; // Crítico - Rojo
+export const TowerView = ({ device, darkMode }: TowerViewProps) => {
+  const getSensorColor = (sensor: Sensor) => {
+    return sensor.alarm_triggered ? "#ef4444" : "#22c55e";
   };
 
-  const calculateSize = (force: number) => {
+  const calculateSize = (value: number) => {
     const minSize = 40;
     const maxSize = 80;
-    const normalizedForce = Math.min(force / 3000, 1);
-    return minSize + (maxSize - minSize) * normalizedForce;
+    // Normalizar el valor (ajusta según el rango esperado de tus sensores)
+    const normalizedValue = Math.min(value / 1000, 1);
+    return minSize + (maxSize - minSize) * normalizedValue;
   };
 
-  const cables = [
-    {
-      name: "NORTE",
-      value: device.Norte,
-      cableName: "Norte", // Nombre para el sistema de alarmas
-      style: { top: 20, left: "50%", transform: "translateX(-50%)" },
-    },
-    {
-      name: "SUR",
-      value: device.Sur,
-      cableName: "Sur", // Nombre para el sistema de alarmas
-      style: { bottom: 20, left: "50%", transform: "translateX(-50%)" },
-    },
-    {
-      name: "ESTE",
-      value: device.Este,
-      cableName: "Este", // Nombre para el sistema de alarmas
-      style: { right: 20, top: "50%", transform: "translateY(-50%)" },
-    },
-    {
-      name: "OESTE",
-      value: device.Oeste,
-      cableName: "Oeste", // Nombre para el sistema de alarmas
-      style: { left: 20, top: "50%", transform: "translateY(-50%)" },
-    },
+  // Posiciones para 3 o 4 sensores
+  const get3SensorPositions = () => [
+    { top: 20, left: "50%", transform: "translateX(-50%)" }, // Arriba
+    { bottom: 20, left: "25%", transform: "translateX(-50%)" }, // Abajo izquierda
+    { bottom: 20, right: "25%", transform: "translateX(50%)" }, // Abajo derecha
   ];
+
+  const get4SensorPositions = () => [
+    { top: 20, left: "50%", transform: "translateX(-50%)" }, // Norte
+    { bottom: 20, left: "50%", transform: "translateX(-50%)" }, // Sur
+    { right: 20, top: "50%", transform: "translateY(-50%)" }, // Este
+    { left: 20, top: "50%", transform: "translateY(-50%)" }, // Oeste
+  ];
+
+  const sensorPositions = device.device_config === "3_sensores" 
+    ? get3SensorPositions() 
+    : get4SensorPositions();
 
   return (
     <Box
@@ -125,43 +73,59 @@ export const TowerView = ({ device, darkMode, deviceConfig, getCableAlarmState }
         <TowerIcon sx={{ fontSize: 30, color: darkMode ? "#fff" : "#000" }} />
       </Box>
 
-      {/* Cables en las 4 direcciones */}
-      {cables.map((cable) => (
-        <Box
-          key={cable.name}
-          sx={{
-            position: "absolute",
-            ...cable.style,
-            textAlign: "center",
-          }}
-        >
+      {/* Sensores dinámicos */}
+      {device.sensors.map((sensor, index) => {
+        const position = sensorPositions[index];
+        const color = getSensorColor(sensor);
+        
+        return (
           <Box
+            key={sensor.id}
             sx={{
-              width: calculateSize(cable.value),
-              height: calculateSize(cable.value),
-              borderRadius: "50%",
-              bgcolor: getCableColor(cable.value, cable.cableName),
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              margin: "0 auto",
-              boxShadow: `0 0 20px ${getCableColor(cable.value, cable.cableName)}`,
-              transition: "all 0.3s ease",
+              position: "absolute",
+              ...position,
+              textAlign: "center",
             }}
           >
-            <Typography variant="h6" fontWeight="bold" color="white">
-              {cable.value}
+            <Box
+              sx={{
+                width: calculateSize(sensor.value),
+                height: calculateSize(sensor.value),
+                borderRadius: "50%",
+                bgcolor: color,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto",
+                boxShadow: `0 0 20px ${color}`,
+                transition: "all 0.3s ease",
+                border: sensor.alarm_triggered ? `3px solid ${color}` : "none",
+                animation: sensor.alarm_triggered ? 'pulse 1.5s infinite' : 'none',
+                '@keyframes pulse': {
+                  '0%': { boxShadow: `0 0 5px ${color}` },
+                  '50%': { boxShadow: `0 0 30px ${color}` },
+                  '100%': { boxShadow: `0 0 5px ${color}` },
+                },
+              }}
+            >
+              <Typography variant="h6" fontWeight="bold" color="white">
+                {sensor.value.toFixed(1)}
+              </Typography>
+            </Box>
+            <Typography
+              variant="caption"
+              fontWeight="bold"
+              sx={{ 
+                mt: 1, 
+                display: "block",
+                color: sensor.alarm_triggered ? "error.main" : "text.primary"
+              }}
+            >
+              {sensor.name.toUpperCase()}
             </Typography>
           </Box>
-          <Typography
-            variant="caption"
-            fontWeight="bold"
-            sx={{ mt: 1, display: "block" }}
-          >
-            {cable.name}
-          </Typography>
-        </Box>
-      ))}
+        );
+      })}
     </Box>
   );
 };

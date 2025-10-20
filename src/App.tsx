@@ -136,7 +136,7 @@ const App = () => {
 
       {/* Session timeout debug indicator (SOLO PARA DESARROLLO) */}
       {/* Comentar o eliminar en producción */}
-      <SessionTimeoutDebug />
+      {/* <SessionTimeoutDebug /> */}
       
       {/* Toast notifications - Fuera del contenido para que se vea correctamente */}
       <ToastContainer

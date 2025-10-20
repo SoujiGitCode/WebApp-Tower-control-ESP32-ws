@@ -16,12 +16,15 @@ import {
   Chip,
   useTheme,
   useMediaQuery,
+  CircularProgress,
+  MenuItem,
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
   Save as SaveIcon,
   Cancel as CancelIcon,
   Warning as WarningIcon,
+  AccessTime as TimeIcon,
 } from '@mui/icons-material';
 import { DeviceThresholdConfig, ThresholdValues, AlarmTimes, Threshold } from '../../api/index';
 import { useAppContext } from '../../context/AppContext';
@@ -48,27 +51,62 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(false);
   const [active, setActive] = useState(true);
   const [thresholds, setThresholds] = useState<ThresholdValues>({
-    low_low: 200,    // 20% de 1000
-    low: 400,        // 40% de 1000  
-    high: 1600,      // 160% de 1000
-    high_high: 2000, // 200% de 1000
+    low_low: 10,
+    low: 50,
+    high: 1000,
+    high_high: 1500,
   });
-  const [timeToAlarm, setTimeToAlarm] = useState<number>(30);
+  const [windowMinutes, setWindowMinutes] = useState<number>(3);
 
-  // Inicializar valores con la configuración del dispositivo
+  // Cargar thresholds existentes desde el API cuando se abre el modal
   useEffect(() => {
-    if (deviceConfig) {
-      // Cargar valores desde deviceConfig
-      setActive(deviceConfig.active);
-      setThresholds(deviceConfig.thresholds);
-      setTimeToAlarm(deviceConfig.alarm_times.time_low);
-    } else {
-      // Si no hay deviceConfig, usar valores por defecto (ya están establecidos en el estado inicial)
-      console.log(`📝 Usando valores por defecto para device ${deviceId}`);
+    if (open && deviceId) {
+      loadThresholdsFromAPI();
     }
-  }, [deviceConfig, deviceId]);
+  }, [open, deviceId]);
+
+  const loadThresholdsFromAPI = async () => {
+    setLoadingData(true);
+    try {
+      console.log(`📡 Cargando thresholds para device ${deviceId}...`);
+      
+      // Llamar al endpoint /api/thresholds
+      const response = await currentApi.getThresholds();
+      
+      if (response.status === 'success' && response.data) {
+        // La respuesta puede ser un array de Thresholds
+        const thresholdsArray = response.data as any;
+        
+        // Buscar el threshold del dispositivo actual
+        const deviceThreshold = Array.isArray(thresholdsArray) 
+          ? thresholdsArray.find((t: any) => t.device_id === deviceId)
+          : null;
+        
+        if (deviceThreshold) {
+          console.log('✅ Thresholds encontrados:', deviceThreshold);
+          setActive(deviceThreshold.active !== false); // Por defecto true si no está definido
+          setThresholds({
+            low_low: deviceThreshold.low_low,
+            low: deviceThreshold.low,
+            high: deviceThreshold.high,
+            high_high: deviceThreshold.high_high,
+          });
+          setWindowMinutes(deviceThreshold.window_minutes || 3);
+        } else {
+          console.log('⚠️ No se encontró configuración para este device, usando valores por defecto');
+          // Mantener los valores por defecto del estado inicial
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error cargando thresholds:', error);
+      toast.error('Error al cargar la configuración actual');
+    } finally {
+      setLoadingData(false);
+    }
+  };
 
   const handleThresholdChange = (field: keyof ThresholdValues, value: string) => {
     // Permitir solo números, puntos decimales y eliminar caracteres no válidos
@@ -85,18 +123,10 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
     setThresholds(prev => ({ ...prev, [field]: numValue }));
   };
 
-  const handleTimeToAlarmChange = (value: string) => {
-    // Permitir solo números enteros para tiempo
-    const cleanValue = value.replace(/[^0-9]/g, '');
-    const numValue = parseInt(cleanValue) || 30;
-    
-    // Limitar entre 5 y 300 segundos
-    if (numValue >= 5 && numValue <= 300) {
-      setTimeToAlarm(numValue);
-    } else if (numValue < 5) {
-      setTimeToAlarm(5);
-    } else if (numValue > 300) {
-      setTimeToAlarm(300);
+  const handleWindowMinutesChange = (value: number) => {
+    // Asegurar que esté entre 1 y 5
+    if (value >= 1 && value <= 5) {
+      setWindowMinutes(value);
     }
   };
 
@@ -121,24 +151,29 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
     
     setLoading(true);
     try {
+      // Preparar datos para enviar
+      const dataToSend = {
+        device_id: deviceId,
+        low_low: thresholds.low_low,
+        low: thresholds.low,
+        high: thresholds.high,
+        high_high: thresholds.high_high,
+        active,
+        window_minutes: windowMinutes,
+      };
+
+      console.log('💾 Guardando thresholds:', dataToSend);
+
       // En dev mode, solo simulamos el guardado
       if (devMode) {
         await new Promise(resolve => setTimeout(resolve, 1000));
         toast.success('Configuración guardada (modo desarrollo)');
       } else {
         // Llamar a la API real para guardar thresholds
-        const response = await currentApi.setThresholds({
-          device_id: deviceId,
-          low_low: thresholds.low_low,
-          low: thresholds.low,
-          high: thresholds.high,
-          high_high: thresholds.high_high,
-          active,
-          time_low: timeToAlarm,
-        });
+        const response = await currentApi.setThresholds(dataToSend);
 
         if (response.status === 'success') {
-          toast.success('Configuración de thresholds actualizada');
+          toast.success('Configuración de thresholds actualizada correctamente');
         } else {
           toast.error(`Error: ${response.message}`);
           return;
@@ -152,10 +187,10 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
           active,
           thresholds,
           alarm_times: {
-            time_low_low: timeToAlarm,
-            time_low: timeToAlarm,
-            time_high: timeToAlarm,
-            time_high_high: timeToAlarm,
+            time_low_low: windowMinutes,
+            time_low: windowMinutes,
+            time_high: windowMinutes,
+            time_high_high: windowMinutes,
           },
         };
         onConfigUpdate(updatedConfig);
@@ -214,16 +249,24 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
         py: { xs: 1, sm: 2 },
         overflow: 'auto'
       }}>
-        <Box sx={{ mt: 2 }}>
-          {/* Alerta de configuración obligatoria */}
-          {isRequiredSetup && (
-            <Alert severity="warning" sx={{ mb: 3 }}>
-              <Typography variant="body2">
-                <strong>⚠️ Configuración Requerida:</strong> Este dispositivo no tiene configuración de thresholds. 
-                Debe guardar una configuración antes de continuar. Se han establecido valores recomendados que puedes ajustar.
-              </Typography>
-            </Alert>
-          )}
+        {loadingData ? (
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4 }}>
+            <CircularProgress sx={{ mb: 2 }} />
+            <Typography variant="body2" color="text.secondary">
+              Cargando configuración actual...
+            </Typography>
+          </Box>
+        ) : (
+          <Box sx={{ mt: 2 }}>
+            {/* Alerta de configuración obligatoria */}
+            {isRequiredSetup && (
+              <Alert severity="warning" sx={{ mb: 3 }}>
+                <Typography variant="body2">
+                  <strong>⚠️ Configuración Requerida:</strong> Este dispositivo no tiene configuración de thresholds. 
+                  Debe guardar una configuración antes de continuar. Se han establecido valores recomendados que puedes ajustar.
+                </Typography>
+              </Alert>
+            )}
 
           {/* Switch para activar/desactivar */}
           {/* <FormControlLabel
@@ -369,33 +412,34 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
 
           <Divider sx={{ my: 3 }} />
 
-          {/* Configuración de Tiempo de Alarma */}
+          {/* Configuración de Ventana de Tiempo */}
           <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1.1rem', sm: '1.25rem' } }}>
-            Tiempo para Activar Alarma
+            <TimeIcon sx={{ verticalAlign: 'middle', mr: 1, fontSize: '1.2rem' }} />
+            Ventana de Tiempo para Alarmas
           </Typography>
           
           <Grid container spacing={{ xs: 2, sm: 2 }}>
             <Grid item xs={12} md={6}>
               <TextField
+                select
                 fullWidth
-                label="Tiempo de Evaluación (segundos)"
-                type="text"
-                value={timeToAlarm}
-                onChange={(e) => handleTimeToAlarmChange(e.target.value)}
-                disabled={!active}
-                placeholder="Ej: 30"
-                inputProps={{
-                  inputMode: 'numeric',
-                  pattern: '[0-9]*',
-                  style: { fontSize: isMobile ? '16px' : '14px' }
-                }}
-                helperText="Tiempo que debe mantenerse el promedio en rango de alarma antes de activarla (5-300 seg)"
+                label="Ventana de Tiempo"
+                value={windowMinutes}
+                onChange={(e) => handleWindowMinutesChange(Number(e.target.value))}
+                disabled={!active || loadingData}
+                helperText="Tiempo en minutos para evaluar el promedio de las lecturas"
                 sx={{
                   '& .MuiInputBase-root': {
                     height: { xs: 56, sm: 56 }
                   }
                 }}
-              />
+              >
+                <MenuItem value={1}>1 minuto</MenuItem>
+                <MenuItem value={2}>2 minutos</MenuItem>
+                <MenuItem value={3}>3 minutos</MenuItem>
+                <MenuItem value={4}>4 minutos</MenuItem>
+                <MenuItem value={5}>5 minutos</MenuItem>
+              </TextField>
             </Grid>
             <Grid item xs={12} md={6}>
               <Box sx={{ 
@@ -407,7 +451,7 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
                 alignItems: 'center'
               }}>
                 <Typography variant="body2" color="text.secondary">
-                  <strong>Ejemplo:</strong> Si configuras 30 segundos, la alarma se activará cuando el promedio de los últimos 30 valores esté fuera del rango normal.
+                  <strong>Ejemplo:</strong> Si configuras {windowMinutes} {windowMinutes === 1 ? 'minuto' : 'minutos'}, la alarma se activará cuando el promedio de los valores en {windowMinutes === 1 ? 'el último minuto' : `los últimos ${windowMinutes} minutos`} esté fuera del rango normal.
                 </Typography>
               </Box>
             </Grid>
@@ -435,7 +479,8 @@ const ThresholdSettings: React.FC<ThresholdSettingsProps> = ({
               La alarma se activa cuando el promedio se mantiene fuera del rango normal durante {timeToAlarm} segundos consecutivos.
             </Typography>
           </Box> */}
-        </Box>
+          </Box>
+        )}
       </DialogContent>
 
       <DialogActions sx={{

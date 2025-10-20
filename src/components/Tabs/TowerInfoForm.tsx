@@ -22,19 +22,17 @@ import {
 import axios from 'axios';
 import { useAppContext } from '@context/AppContext';
 import { toast } from 'react-toastify';
-import PasswordTextField from '@components/PasswordTextField';
 
 const TowerInfoForm = () => {
-    const { esp32IP, darkMode } = useAppContext();
+    const { esp32IP, darkMode, currentUser } = useAppContext();
     const [loading, setLoading] = useState(true);
     const [formData, setFormData] = useState({
-        admin_password: '',
         id: '',
         name: '',
         location: '',
         priority: '',
         type: '',
-        loadcells_amount: ''
+        levels_count: ''
     });
     const [feedbackMessage, setFeedbackMessage] = useState({ message: '', type: '' });
 
@@ -42,26 +40,46 @@ const TowerInfoForm = () => {
     useEffect(() => {
         const fetchTowerInfo = async () => {
             try {
-                const response = await axios.get(`http://${esp32IP}/api/get/tower-info`);
-                setFormData({
-                    admin_password: '',
-                    id: response.data.data.id,
-                    name: response.data.data.name,
-                    location: response.data.data.location,
-                    priority: response.data.data.priority,
-                    type: response.data.data.type,
-                    loadcells_amount: response.data.data.loadcells_amount,
+                // Obtener el token del usuario actual
+                const token = currentUser?.sessionId;
+                if (!token) {
+                    throw new Error('No se encontró token de autenticación');
+                }
+
+                const response = await axios.get(`http://${esp32IP}/api/get/tower-info`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
                 });
+                const towerData = response.data.data;
+                
+                setFormData({
+                    id: towerData.id || '',
+                    name: towerData.name || '',
+                    location: towerData.location || '',
+                    priority: towerData.priority?.toString() || '1',
+                    type: towerData.type || '',
+                    levels_count: towerData.levels_count?.toString() || '4',
+                });
+                
+                // Guardar levels_count en localStorage para usar en el Dashboard
+                if (towerData.levels_count) {
+                    localStorage.setItem('tower_levels_count', towerData.levels_count.toString());
+                    console.log('✅ Levels count guardado en localStorage:', towerData.levels_count);
+                }
+                
                 setLoading(false);
+                toast.success('Información de la torre cargada correctamente');
             } catch (error) {
-                toast.error('Error al cargar la información de la torre.');
+                console.error('❌ Error al cargar tower info:', error);
+                toast.error('Error al obtener información de la torre');
                 setFeedbackMessage({ message: 'Error al cargar la información de la torre.', type: 'error' });
                 setLoading(false);
             }
         };
 
         fetchTowerInfo();
-    }, [esp32IP]);
+    }, [esp32IP, currentUser]);
 
     // Manejar el cambio de valores en el formulario
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -70,26 +88,40 @@ const TowerInfoForm = () => {
 
     // Manejar el submit del formulario
     const handleSubmit = async () => {
-        // Crear un form-data para enviar los datos
-        const formDataToSend = new FormData();
-        Object.entries(formData).forEach(([key, value]) => {
-            formDataToSend.append(key, value);
-        });
-
         try {
+            // Obtener el token del usuario actual
+            const token = currentUser?.sessionId;
+            if (!token) {
+                throw new Error('No se encontró token de autenticación');
+            }
+
+            // Crear un form-data para enviar los datos
+            const formDataToSend = new FormData();
+            Object.entries(formData).forEach(([key, value]) => {
+                formDataToSend.append(key, value);
+            });
+
             const response = await axios.post(`http://${esp32IP}/api/set/tower-info`, formDataToSend, {
                 headers: {
-                    'Content-Type': 'multipart/form-data'
+                    'Content-Type': 'multipart/form-data',
+                    'Authorization': `Bearer ${token}`
                 }
             });
 
             if (response.data.status === 'success') {
+                // Actualizar localStorage con el nuevo levels_count
+                if (formData.levels_count) {
+                    localStorage.setItem('tower_levels_count', formData.levels_count);
+                    console.log('✅ Levels count actualizado en localStorage:', formData.levels_count);
+                }
+                
                 setFeedbackMessage({ message: 'Información de la torre actualizada exitosamente.', type: 'success' });
                 toast.success('Información de la torre actualizada exitosamente.');
             } else {
                 throw new Error('Error en la actualización.');
             }
         } catch (error) {
+            console.error('❌ Error al actualizar tower info:', error);
             setFeedbackMessage({ message: 'Error al actualizar la información de la torre.', type: 'error' });
             toast.error('Error al actualizar la información de la torre.');
         }
@@ -150,25 +182,6 @@ const TowerInfoForm = () => {
             {/* Formulario */}
             <Card elevation={2} sx={{ borderRadius: 2 }}>
                 <CardContent sx={{ p: 4 }}>
-                    {/* Contraseña */}
-                    <Box sx={{ mb: 4 }}>
-                        <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                            🔐 Autenticación
-                        </Typography>
-                        <PasswordTextField
-                            label="Contraseña de Administrador"
-                            name="admin_password"
-                            fullWidth
-                            value={formData.admin_password}
-                            onChange={handleChange}
-                            variant="outlined"
-                            required
-                            sx={{ backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' }}
-                        />
-                    </Box>
-
-                    <Divider sx={{ my: 3 }} />
-
                     {/* Información básica */}
                     <Box sx={{ mb: 4 }}>
                         <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
@@ -257,15 +270,15 @@ const TowerInfoForm = () => {
                             </Grid>
                             <Grid item xs={12} md={4}>
                                 <TextField
-                                    label="Cantidad de Celdas de Carga"
+                                    label="Cantidad de Niveles"
                                     variant="outlined"
                                     fullWidth
-                                    name="loadcells_amount"
-                                    value={formData.loadcells_amount}
+                                    name="levels_count"
+                                    value={formData.levels_count}
                                     onChange={handleChange}
                                     required
                                     type="number"
-                                    helperText="Número de sensores"
+                                    helperText="Número de niveles/dispositivos esperados"
                                 />
                             </Grid>
                         </Grid>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import {
   Box,
   Typography,
@@ -11,196 +11,104 @@ import {
   Chip,
   CircularProgress,
   Alert,
-  Tabs,
-  Tab,
   Button,
+  Menu,
+  MenuItem,
 } from "@mui/material";
 import {
   ArrowBack as BackIcon,
-  Settings as SettingsIcon,
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon,
+  Settings as SettingsIcon,
+  MoreVert as MoreIcon,
+  AdminPanelSettings as AdminIcon,
+  Logout as LogoutIcon,
 } from "@mui/icons-material";
+import { toast } from "react-toastify";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAppContext } from "../../context/AppContext";
-import { Device, DevicesData, DeviceThresholdConfig } from "../../api/index";
-import useAlarmSystem from "../../hooks/useAlarmSystem";
+import { Device, DevicesData, Sensor } from "../../api/index";
 
-// Importar todos los componentes de visualización
+// Importar componentes de visualización
 import { TowerView } from "../../components/RealTimeData/TowerView";
-import { RadarChart } from "@components/RealTimeData/RadarChart";
-import { GaugeChart } from "@components/RealTimeData/GaugeChart";
-import { HeatmapChart } from "@components/RealTimeData/HeatmapChart";
 import ThresholdSettings from "../../components/ThresholdSettings";
-// import BarChart from "../../components/RealTimeData/BarChart";
-
-// Tipo para las diferentes vistas disponibles
-type ChartType = "circles" | "bar" | "radar" | "gauges" | "heatmap";
 
 const RealTimeData = () => {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { darkMode, setDarkMode, currentApi, devMode, esp32IP, isAdmin } = useAppContext();
+  const { darkMode, setDarkMode, currentApi, devMode, esp32IP, isAdmin, logout } = useAppContext();
 
-  // Estados optimizados para mejor rendimiento mobile
-  const [devicesData, setDevicesData] = useState<Device[]>([]);
-  const [loading, setLoading] = useState(false); // Cambiar a false para carga no bloqueante
+  // Estados simplificados
+  const [currentDevice, setCurrentDevice] = useState<Device | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [wsConnection, setWsConnection] = useState<any>(null);
-  const [chartType, setChartType] = useState<ChartType>("circles");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
-  const [isRequiredSetup, setIsRequiredSetup] = useState(false);
-  const [hasCheckedThresholds, setHasCheckedThresholds] = useState(false);
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false); // Nuevo estado
-  const [deviceConfig, setDeviceConfig] = useState<DeviceThresholdConfig | undefined>(
-    location.state?.deviceConfig
-  );
+  const [openSettings, setOpenSettings] = useState(false);
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [minLoadingComplete, setMinLoadingComplete] = useState(false);
 
-  // Sistema de alarmas con configuración estable - SOLO si hay deviceConfig
-  const alarmSystemConfig = useMemo(() => {
-    // No inicializar el sistema de alarmas hasta tener deviceConfig
-    if (!deviceConfig || !hasCheckedThresholds) {
-      return null;
-    }
-    
-    // Calcular el interval basado en el tiempo más pequeño de thresholds
-    const minTime = Math.min(
-      deviceConfig.alarm_times.time_low_low || 60,
-      deviceConfig.alarm_times.time_low || 60,
-      deviceConfig.alarm_times.time_high || 60,
-      deviceConfig.alarm_times.time_high_high || 60
-    );
-    
-    // Interval debe ser 1 segundo para llenar buffers correctamente
-    const updateInterval = 1000; // 1 segundo fijo
-    
-    console.log(`🔧 Configurando sistema de alarmas con interval: ${updateInterval}ms (min threshold time: ${minTime}s)`);
-    
-    return {
-      devices: devicesData,
-      devicesConfig: [deviceConfig],
-      updateInterval,
-      devMode, // Pasar devMode para controlar si llama API real
-    };
-  }, [devicesData.length, deviceConfig?.device_id, deviceConfig?.active, devMode, hasCheckedThresholds]);
+  // Delay mínimo de loading para evitar mostrar error prematuramente
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setMinLoadingComplete(true);
+    }, 1500); // 1.5 segundos de delay mínimo
 
-  const {
-    alarmStates,
-    getActiveAlarms,
-    getCableAlarmState,
-    getCableAverage,
-  } = useAlarmSystem(alarmSystemConfig || {
-    devices: [],
-    devicesConfig: null,
-    updateInterval: 1000, // 1 segundo por defecto
-    devMode,
-  });
+    return () => clearTimeout(timer);
+  }, []);
 
-  const currentDevice = useMemo(() => 
-    devicesData.find((device) => device.id === Number(deviceId)),
-    [devicesData, deviceId]
-  );
+  // Handlers para settings
+  const handleOpenSettings = () => setOpenSettings(true);
+  const handleCloseSettings = () => setOpenSettings(false);
 
-  const handleConfigUpdate = (newConfig: DeviceThresholdConfig) => {
-    setDeviceConfig(newConfig);
-    setIsRequiredSetup(false); // Ya no es configuración obligatoria después de guardar
+  // Handlers para el menú
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl(event.currentTarget);
   };
 
-  // Verificar si existen thresholds para este dispositivo (simplificado)
-  const checkDeviceThresholds = async () => {
-    if (hasCheckedThresholds || !isAdmin || isNavigating) {
-      return; // Solo verificar una vez y solo para admins
-    }
-    
-    try {
-      console.log(`🔍 Verificando thresholds para device ${deviceId}...`);
-      
-      // Marcar como verificado inmediatamente para evitar múltiples llamadas
-      setHasCheckedThresholds(true);
-      
-      const response = await currentApi.getThresholds();
-      
-      if (response.status === 'success' && response.data) {
-        // Manejo simple de la estructura de respuesta
-        let thresholds: any[] = Array.isArray(response.data) 
-          ? response.data 
-          : (response.data as any).thresholds || [];
-        
-        const deviceThreshold = thresholds.find(threshold => threshold.device_id === Number(deviceId));
-        
-        if (!deviceThreshold) {
-          console.log(`⚠️ No se encontraron thresholds para device ${deviceId}`);
-          // Solo abrir modal si no estamos navegando
-          if (!isNavigating) {
-            setIsRequiredSetup(true);
-            setSettingsOpen(true);
-          }
-        } else {
-          console.log(`✅ Thresholds encontrados para device ${deviceId}`);
-          
-          // Solo crear config si no la tenemos
-          if (!deviceConfig) {
-            const configFromAPI: DeviceThresholdConfig = {
-              device_id: deviceThreshold.device_id,
-              active: deviceThreshold.active,
-              thresholds: {
-                low_low: deviceThreshold.low_low,
-                low: deviceThreshold.low,
-                high: deviceThreshold.high,
-                high_high: deviceThreshold.high_high,
-              },
-              alarm_times: {
-                time_low_low: deviceThreshold.time_low_low || 60,
-                time_low: deviceThreshold.time_low || 30,
-                time_high: deviceThreshold.time_high || 300,
-                time_high_high: deviceThreshold.time_high_high || 30,
-              },
-            };
-            setDeviceConfig(configFromAPI);
-          }
-        }
-      } else {
-        console.warn('⚠️ Error en respuesta de thresholds:', response.message);
-        // Solo mostrar modal en caso de error si no estamos navegando
-        if (!isNavigating) {
-          setIsRequiredSetup(true);
-          setSettingsOpen(true);
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error verificando thresholds:', error);
-      // En caso de error, no bloquear la aplicación
-      // Solo mostrar modal si es crítico y no estamos navegando
-      if (!isNavigating && !deviceConfig) {
-        setIsRequiredSetup(true);
-        setSettingsOpen(true);
-      }
-    }
+  const handleMenuClose = () => {
+    setAnchorEl(null);
   };
 
-  // Función optimizada para navegar al dashboard (especialmente para móviles)
+  const handleLogout = () => {
+    if (wsConnection) {
+      wsConnection.close();
+      setWsConnection(null);
+    }
+    logout();
+    handleMenuClose();
+    toast.info("Sesión cerrada correctamente");
+    navigate("/login");
+  };
+
+  const handleAdminPanel = () => {
+    if (wsConnection) {
+      wsConnection.close();
+      setWsConnection(null);
+    }
+    handleMenuClose();
+    navigate("/admin");
+  };
+
+  // Función optimizada para navegar al dashboard
   const handleNavigateToHome = () => {
-    if (isNavigating) return; // Evitar navegaciones múltiples
+    if (isNavigating) return;
     
-    console.log("🚀 Iniciando navegación optimizada al dashboard...");
+    console.log("🚀 Navegando al dashboard...");
     
     try {
       setIsNavigating(true);
       
-      // Limpiar inmediatamente para móviles
       if (wsConnection) {
         wsConnection.close();
         setWsConnection(null);
       }
       
-      // Limpiar estados para liberar memoria en móviles
-      setDevicesData([]);
+      setCurrentDevice(null);
       setError(null);
       setLoading(false);
       
-      // Usar React Router de forma directa para mejor rendimiento
       navigate("/dashboard", { 
         replace: true,
         state: { 
@@ -211,123 +119,22 @@ const RealTimeData = () => {
       
     } catch (error) {
       console.error("❌ Error durante la navegación:", error);
-      // Fallback robusto para móviles
       window.location.href = "/dashboard";
     }
   };
 
-  const getCableColor = (force: number, cable?: string) => {
-    // Primero evaluar usando thresholds instantáneos (siempre)
-    if (deviceConfig?.thresholds) {
-      const { low_low, low, high, high_high } = deviceConfig.thresholds;
-      
-      // Crítico: menor o igual a low_low O mayor o igual a high_high
-      if (force <= low_low || force >= high_high) {
-        return "#ef4444"; // Crítico - Rojo
-      }
-      
-      // Alerta: entre low_low y low O entre high y high_high
-      if ((force > low_low && force <= low) || (force >= high && force < high_high)) {
-        return "#f59e0b"; // Alerta - Amarillo
-      }
-      
-      // Normal: entre low y high
-      return "#22c55e"; // Normal - Verde
-    }
-
-    // Si tenemos sistema de alarmas activo y hay una alarma, usar colores de alarma
-    if (cable && currentDevice && deviceConfig?.active) {
-      const alarmState = getCableAlarmState(currentDevice.id, cable);
-      if (alarmState.isActive) {
-        switch (alarmState.type) {
-          case 'low_low':
-          case 'high_high':
-            return "#ef4444"; // Crítico/Alarma - Rojo
-          case 'low':
-          case 'high':
-            return "#f59e0b"; // Alerta - Amarillo
-          default:
-            break;
-        }
-      }
-    }
-    
-    // Fallback a lógica anterior cuando no hay configuración de thresholds
-    if (force < 1500) return "#22c55e"; // Normal - Verde
-    if (force < 2000) return "#f59e0b"; // Alerta - Amarillo
-    return "#ef4444"; // Crítico - Rojo
-  };
-
-  const getForceStatus = (force: number, cable?: string) => {
-    // Primero evaluar usando thresholds instantáneos (siempre)
-    if (deviceConfig?.thresholds) {
-      const { low_low, low, high, high_high } = deviceConfig.thresholds;
-      
-      // Crítico: menor o igual a low_low O mayor o igual a high_high
-      if (force <= low_low || force >= high_high) {
-        return { label: "🚨 Crítico", color: "error" as const, isAlarm: false };
-      }
-      // Alerta: entre low_low y low O entre high y high_high
-      else if ((force > low_low && force <= low) || (force >= high && force < high_high)) {
-        return { label: "⚠️ Alerta", color: "warning" as const, isAlarm: false };
-      }
-      // Normal: entre low y high
-      else {
-        return { label: "✅ Normal", color: "success" as const, isAlarm: false };
-      }
-    }
-
-    // Si tenemos sistema de alarmas activo y hay una alarma, usar estados de alarma
-    if (cable && currentDevice && deviceConfig?.active) {
-      const alarmState = getCableAlarmState(currentDevice.id, cable);
-      if (alarmState.isActive) {
-        switch (alarmState.type) {
-          case 'low_low':
-          case 'high_high':
-            return { 
-              label: "🚨 ALARMA", 
-              color: "error" as const,
-              isAlarm: true,
-              average: alarmState.averageValue
-            };
-          case 'low':
-          case 'high':
-            return { 
-              label: "⚠️ ALERTA", 
-              color: "warning" as const,
-              isAlarm: true,
-              average: alarmState.averageValue
-            };
-          default:
-            break;
-        }
-      }
-    }
-    
-    // Fallback a lógica anterior cuando no hay configuración
-    if (force < 1500) {
-      return { label: "✅ Normal", color: "success" as const, isAlarm: false };
-    } else if (force < 2000) {
-      return { label: "⚠️ Alerta", color: "warning" as const, isAlarm: false };
-    } else {
-      return { label: "🚨 Crítico", color: "error" as const, isAlarm: false };
-    }
-  };
-
-  // Conectar WebSocket de forma no bloqueante
+  // Conectar WebSocket
   useEffect(() => {
-    if (isNavigating) return; // No hacer nada si estamos navegando
+    if (isNavigating) return;
     
-    let ws: any = null;
+    let ws: WebSocket | null = null;
     let reconnectTimeout: number | null = null;
 
     const connectWebSocket = async () => {
-      if (isNavigating) return; // Verificar nuevamente
+      if (isNavigating) return;
       
       try {
-        // NO bloquear la carga inicial - comenzar sin loading
         setError(null);
-
         console.log("🔌 Intentando conectar WebSocket...");
         
         ws = currentApi.createWebSocketConnection(
@@ -335,24 +142,30 @@ const RealTimeData = () => {
         );
 
         ws.onopen = () => {
-          if (isNavigating) return; // No procesar si estamos navegando
+          if (isNavigating) return;
           console.log("🔌 RealTimeData WebSocket conectado");
-          setLoading(false); // Solo quitar loading cuando se conecte exitosamente
+          setLoading(false);
         };
 
         ws.onmessage = (event: MessageEvent) => {
-          if (isNavigating) return; // No procesar si estamos navegando
+          if (isNavigating) return;
           try {
+            if (event.data === "Connected" || event.data.toString().trim() === "Connected") {
+              return;
+            }
+
             const data = JSON.parse(event.data) as DevicesData;
             if (data && data.devices && Array.isArray(data.devices)) {
-              setDevicesData(data.devices);
-              setLoading(false); // Datos recibidos, ya no está cargando
-              setInitialLoadComplete(true); // Marcar carga inicial como completa
-              setError(null); // Limpiar cualquier error previo
+              // Buscar el device específico
+              const device = data.devices.find(d => d.device_id === Number(deviceId));
+              if (device) {
+                setCurrentDevice(device);
+                setLoading(false);
+                setError(null);
+              }
             }
           } catch (err) {
             console.error("Error parseando datos WebSocket:", err);
-            // No mostrar error por este problema de parsing
           }
         };
 
@@ -360,7 +173,6 @@ const RealTimeData = () => {
           console.log("🔌 RealTimeData WebSocket desconectado");
           setWsConnection(null);
           
-          // Intentar reconectar después de 2 segundos si no estamos navegando
           if (!isNavigating) {
             console.log("🔄 Programando reconexión en 2 segundos...");
             reconnectTimeout = setTimeout(() => {
@@ -374,31 +186,28 @@ const RealTimeData = () => {
         ws.onerror = (error: Event) => {
           console.error("🔌 Error en RealTimeData WebSocket:", error);
           
-          // En modo desarrollo, no mostrar error de conexión
           if (!devMode && !isNavigating) {
-            // Solo mostrar error después de varios intentos fallidos
             setTimeout(() => {
-              if (!devicesData.length && !isNavigating && !initialLoadComplete) {
-                setError("Error de conexión con el servidor. Verificando...");
+              if (!currentDevice && !isNavigating) {
+                setError("Error de conexión con el servidor");
               }
-            }, 8000); // Aumentar a 8 segundos para móviles lentos
+            }, 5000);
           }
           
           setWsConnection(null);
-          setLoading(false); // No bloquear la UI por errores de conexión
+          setLoading(false);
         };
 
         setWsConnection(ws);
       } catch (err) {
         console.error("Error creando conexión WebSocket:", err);
         
-        // No bloquear la UI, solo mostrar en consola
         if (!devMode && !isNavigating) {
           setTimeout(() => {
-            if (!devicesData.length && !isNavigating && !initialLoadComplete) {
+            if (!currentDevice && !isNavigating) {
               setError("No se pudo conectar al servidor");
             }
-          }, 5000); // 5 segundos para móviles
+          }, 5000);
         }
         
         setWsConnection(null);
@@ -406,7 +215,6 @@ const RealTimeData = () => {
       }
     };
 
-    // Conectar inmediatamente, sin demora
     connectWebSocket();
 
     return () => {
@@ -418,105 +226,10 @@ const RealTimeData = () => {
         setWsConnection(null);
       }
     };
-  }, [currentApi, devMode, esp32IP, isNavigating]);
+  }, [currentApi, devMode, esp32IP, isNavigating, deviceId]);
 
-  // Cleanup WebSocket al desmontar componente
-  useEffect(() => {
-    return () => {
-      if (wsConnection) {
-        wsConnection.close();
-        setWsConnection(null);
-      }
-    };
-  }, [wsConnection]);
-
-  // Cleanup general al desmontar el componente
-  useEffect(() => {
-    return () => {
-      // Limpiar cualquier conexión WebSocket restante
-      if (wsConnection) {
-        try {
-          wsConnection.close();
-        } catch (error) {
-          console.error("Error cerrando WebSocket en cleanup:", error);
-        }
-      }
-      
-      // Limpiar estados
-      setLoading(false);
-      setError(null);
-      setDevicesData([]);
-    };
-  }, []);
-
-  // Timeout de seguridad para móviles - mostrar contenido aunque no lleguen datos
-  useEffect(() => {
-    const fallbackTimeout = setTimeout(() => {
-      if (!initialLoadComplete && !isNavigating) {
-        console.log("⏰ Timeout de seguridad: mostrando interfaz sin datos");
-        setInitialLoadComplete(true);
-        setLoading(false);
-        
-        // Si no hay datos después del timeout, mostrar dispositivo mock para evitar crash
-        if (devicesData.length === 0 && deviceId) {
-          const mockDevice: Device = {
-            id: Number(deviceId),
-            unit_name: `Torre ${deviceId}`,
-            Norte: 0,
-            Sur: 0,
-            Este: 0,
-            Oeste: 0,
-            online: false
-          };
-          setDevicesData([mockDevice]);
-        }
-      }
-    }, 10000); // 10 segundos máximo de espera para móviles
-
-    return () => clearTimeout(fallbackTimeout);
-  }, [initialLoadComplete, isNavigating, devicesData.length, deviceId]);
-  useEffect(() => {
-    // Solo verificar si es admin, no estamos navegando y no hemos verificado aún
-    if (isAdmin && !isNavigating && !hasCheckedThresholds && deviceId) {
-      // Ejecutar después de un pequeño delay para no bloquear la carga inicial
-      const timeoutId = setTimeout(() => {
-        if (!isNavigating) {
-          checkDeviceThresholds();
-        }
-      }, 500); // Pequeño delay de 500ms
-
-      return () => clearTimeout(timeoutId);
-    }
-  }, [isAdmin, isNavigating, hasCheckedThresholds, deviceId]);
-
-  // Verificar thresholds automáticamente al cargar el componente (DEPRECADO - movido arriba)
-  // useEffect(() => {
-  //   // Solo verificar si es admin y no estamos navegando
-  //   if (isAdmin && !isNavigating && !hasCheckedThresholds) {
-  //     // Esperar un poco para que se establezca la conexión
-  //     const timeoutId = setTimeout(() => {
-  //       checkDeviceThresholds();
-  //     }, 1000);
-
-  //     return () => clearTimeout(timeoutId);
-  //   }
-  // }, [isAdmin, isNavigating, hasCheckedThresholds, deviceId]);
-
-  // Detectar cambios en la ubicación y forzar cleanup si se navega fuera
-  useEffect(() => {
-    if (location.pathname !== `/real-time-data/${deviceId}`) {
-      setIsNavigating(true);
-      
-      // Limpiar conexiones inmediatamente
-      if (wsConnection) {
-        wsConnection.close();
-        setWsConnection(null);
-      }
-    }
-  }, [location.pathname, deviceId, wsConnection]);
-
-  // Mostrar loading solo si realmente no tenemos datos y estamos cargando
-  if (loading && !initialLoadComplete && devicesData.length === 0) {
+  // Mostrar loading (siempre mostrar al menos durante el delay mínimo)
+  if ((loading && !currentDevice) || !minLoadingComplete) {
     return (
       <Box
         sx={{
@@ -553,15 +266,15 @@ const RealTimeData = () => {
               fontSize: { xs: '0.9rem', sm: '1rem' }
             }}
           >
-            Conectando con el dispositivo #{deviceId}
+            Conectando con el nivel #{deviceId}
           </Typography>
         </Box>
       </Box>
     );
   }
 
-  // Mejorar manejo de errores para móviles
-  if (error && !devicesData.length && initialLoadComplete) {
+  // Manejo de errores (solo después del delay mínimo)
+  if (error && !currentDevice && minLoadingComplete) {
     return (
       <Box
         sx={{
@@ -604,8 +317,8 @@ const RealTimeData = () => {
     );
   }
 
-  // Manejo mejorado cuando no se encuentra el dispositivo
-  if (initialLoadComplete && !currentDevice && devicesData.length > 0) {
+  // Si no hay dispositivo actual (solo mostrar después del delay mínimo)
+  if (!currentDevice && minLoadingComplete) {
     return (
       <Box
         sx={{
@@ -638,102 +351,18 @@ const RealTimeData = () => {
           }
         >
           <Typography variant="h6" sx={{ mb: 1, fontSize: { xs: '1rem', sm: '1.125rem' } }}>
-            Dispositivo No Encontrado
+            Nivel No Encontrado
           </Typography>
           <Typography variant="body2" sx={{ fontSize: { xs: '0.85rem', sm: '0.9rem' } }}>
-            No se pudo encontrar el dispositivo con ID: {deviceId}
+            No se pudo encontrar el nivel con ID: {deviceId}
           </Typography>
         </Alert>
       </Box>
     );
   }
 
-  // Solo definir las fuerzas si tenemos un dispositivo válido
-  if (!currentDevice) {
-    return (
-      <Box
-        sx={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: darkMode
-            ? "linear-gradient(135deg, #1e293b 0%, #334155 30%, #475569 70%, #64748b 100%)"
-            : "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #cbd5e1 100%)",
-          p: { xs: 2, sm: 3 },
-        }}
-      >
-        <Box sx={{ textAlign: "center", maxWidth: 400 }}>
-          <CircularProgress
-            size={60}
-            sx={{ color: darkMode ? "#60a5fa" : "#3b82f6", mb: 3 }}
-          />
-          <Typography
-            variant="h6"
-            sx={{ 
-              color: "text.primary", 
-              fontWeight: 500,
-              fontSize: { xs: '1.1rem', sm: '1.25rem' },
-              mb: 1
-            }}
-          >
-            Cargando dispositivo...
-          </Typography>
-          <Typography
-            variant="body2"
-            sx={{ 
-              color: "text.secondary",
-              fontSize: { xs: '0.9rem', sm: '1rem' }
-            }}
-          >
-            Buscando dispositivo #{deviceId}
-          </Typography>
-        </Box>
-      </Box>
-    );
-  }
-
-  const forces = [
-    currentDevice.Norte,
-    currentDevice.Sur,
-    currentDevice.Este,
-    currentDevice.Oeste,
-  ];
-  const cableNames = ["Norte", "Sur", "Este", "Oeste"];
-  const cableValues = [
-    currentDevice.Norte,
-    currentDevice.Sur,
-    currentDevice.Este,
-    currentDevice.Oeste,
-  ];
-
-  // Renderizar el chart según el tipo seleccionado
-  const renderChart = () => {
-    switch (chartType) {
-      case "circles":
-        return <TowerView 
-          device={currentDevice} 
-          darkMode={darkMode} 
-          deviceConfig={deviceConfig}
-          getCableAlarmState={getCableAlarmState}
-        />;
-      // case "bar":
-      //   return <BarChart device={currentDevice} darkMode={darkMode} />;
-      case "radar":
-        return <RadarChart device={currentDevice} darkMode={darkMode} />;
-      case "gauges":
-        return <GaugeChart device={currentDevice} darkMode={darkMode} />;
-      case "heatmap":
-        return <HeatmapChart device={currentDevice} darkMode={darkMode} />;
-      default:
-        return <TowerView 
-          device={currentDevice} 
-          darkMode={darkMode} 
-          deviceConfig={deviceConfig}
-          getCableAlarmState={getCableAlarmState}
-        />;
-    }
-  };
+  // Verificar si hay alarmas activas
+  const hasActiveAlarms = currentDevice.sensors.some(sensor => sensor.alarm_triggered);
 
   return (
     <Box
@@ -787,11 +416,12 @@ const RealTimeData = () => {
               variant="h6"
               sx={{
                 fontWeight: 600,
-                color: "text.primary",
+                color: hasActiveAlarms ? "error.main" : "text.primary",
                 fontSize: { xs: "1.1rem", sm: "1.25rem" },
               }}
             >
-              Torre {currentDevice.unit_name}
+              Nivel #{currentDevice.device_id}
+              {hasActiveAlarms && " 🚨"}
             </Typography>
             <Typography
               variant="body2"
@@ -801,9 +431,27 @@ const RealTimeData = () => {
                 fontWeight: 500,
               }}
             >
-              ID: {currentDevice.id} • Monitoreo en Tiempo Real
+              {currentDevice.units} • {currentDevice.device_config === "3_sensores" ? "3 Sensores" : "4 Sensores"}
             </Typography>
           </Box>
+          {/* Botón de Settings - Solo para Admin */}
+          {isAdmin && (
+            <IconButton
+              onClick={handleOpenSettings}
+              sx={{
+                color: "text.primary",
+                bgcolor: darkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
+                mr: 1,
+                "&:hover": {
+                  bgcolor: darkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)",
+                  transform: "scale(1.05)",
+                },
+                transition: "all 0.2s ease",
+              }}
+            >
+              <SettingsIcon />
+            </IconButton>
+          )}
           {/* Toggle Dark/Light Mode */}
           <IconButton
             onClick={() => setDarkMode(!darkMode)}
@@ -820,23 +468,48 @@ const RealTimeData = () => {
           >
             {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
           </IconButton>
-          {/* Botón de configuración - Solo para administradores */}
-          {isAdmin && (
-            <IconButton
-              onClick={() => setSettingsOpen(true)}
-              sx={{
-                color: "text.primary",
-                bgcolor: darkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
-                "&:hover": {
-                  bgcolor: darkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)",
-                  transform: "scale(1.05)",
-                },
-                transition: "all 0.2s ease",
-              }}
-            >
-              <SettingsIcon />
-            </IconButton>
-          )}
+
+          {/* Menú de opciones */}
+          <IconButton
+            onClick={handleMenuOpen}
+            sx={{
+              color: "text.primary",
+              bgcolor: darkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
+              "&:hover": {
+                bgcolor: darkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)",
+                transform: "scale(1.05)",
+              },
+              transition: "all 0.2s ease",
+            }}
+          >
+            <MoreIcon />
+          </IconButton>
+
+          <Menu
+            anchorEl={anchorEl}
+            open={Boolean(anchorEl)}
+            onClose={handleMenuClose}
+            anchorOrigin={{
+              vertical: 'bottom',
+              horizontal: 'right',
+            }}
+            transformOrigin={{
+              vertical: 'top',
+              horizontal: 'right',
+            }}
+          >
+            {/* Solo mostrar Panel de Administración si es admin */}
+            {isAdmin && (
+              <MenuItem onClick={handleAdminPanel}>
+                <AdminIcon sx={{ mr: 1 }} />
+                Panel de Administración
+              </MenuItem>
+            )}
+            <MenuItem onClick={handleLogout}>
+              <LogoutIcon sx={{ mr: 1 }} />
+              Cerrar Sesión
+            </MenuItem>
+          </Menu>
         </Toolbar>
       </AppBar>
 
@@ -862,38 +535,39 @@ const RealTimeData = () => {
                   Vista de Torre (Tensión en Tiempo Real)
                 </Typography>
 
-                {/* Tabs para diferentes visualizaciones */}
-                <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 3 }}>
-                  <Tabs
-                    value={chartType}
-                    onChange={(_, newValue) => setChartType(newValue)}
-                    centered
-                    sx={{
-                      "& .MuiTab-root": {
-                        minHeight: 40,
-                        fontSize: "0.85rem !important",
-                        color: darkMode ? "#9ca3af" : "#6b7280",
-                        textTransform: "none",
-                      },
-                      "& .Mui-selected": {
-                        color: darkMode ? "#60a5fa" : "#3b82f6",
-                      },
-                      "& .MuiTabs-indicator": {
-                        backgroundColor: darkMode ? "#60a5fa" : "#3b82f6",
-                        height: 2,
-                      },
-                    }}
-                  >
-                    <Tab value="circles" label="Círculos" />
-                    {/* <Tab value="bar" label="Barras" /> */}
-                    {/* <Tab value="radar" label="Radial" /> */}
-                    <Tab value="heatmap" label="Mapa de Calor" />
-                    <Tab value="gauges" label="Medidores" />
-                  </Tabs>
-                </Box>
+                {/* Warning si faltan sensores (cada nivel puede tener 3-4 sensores) */}
+                {(() => {
+                  const expectedSensors = currentDevice.device_config === "3_sensores" ? 3 : 4;
+                  const missingSensors = expectedSensors - currentDevice.sensors.length;
+                  const hasMissingSensors = missingSensors > 0;
 
-                {/* Renderizar el chart seleccionado */}
-                {renderChart()}
+                  return hasMissingSensors ? (
+                    <Alert 
+                      severity="warning" 
+                      sx={{ 
+                        mb: 3,
+                        fontWeight: 500,
+                        '& .MuiAlert-message': {
+                          width: '100%'
+                        }
+                      }}
+                    >
+                      <Typography variant="body1" fontWeight="600">
+                        ⚠️ Sensores incompletos
+                      </Typography>
+                      <Typography variant="body2">
+                        Se esperan <strong>{expectedSensors} sensores</strong> pero solo se {currentDevice.sensors.length === 1 ? 'detectó' : 'detectaron'} <strong>{currentDevice.sensors.length}</strong>.
+                        {missingSensors === 1 ? ' Falta 1 sensor.' : ` Faltan ${missingSensors} sensores.`}
+                      </Typography>
+                    </Alert>
+                  ) : null;
+                })()}
+
+                {/* Vista de Torre */}
+                <TowerView 
+                  device={currentDevice} 
+                  darkMode={darkMode}
+                />
 
                 {/* Leyenda */}
                 <Box
@@ -929,56 +603,25 @@ const RealTimeData = () => {
                       flexWrap: "wrap",
                     }}
                   >
-                    {deviceConfig?.thresholds ? (
-                      <>
-                        <Chip
-                          label={`Normal: ${deviceConfig.thresholds.low + 1}-${deviceConfig.thresholds.high - 1}N`}
-                          color="success"
-                          size="small"
-                          sx={{ fontWeight: 500 }}
-                        />
-                        <Chip
-                          label={`Alerta: ≤${deviceConfig.thresholds.low}N o ≥${deviceConfig.thresholds.high}N`}
-                          color="warning"
-                          size="small"
-                          sx={{ fontWeight: 500 }}
-                        />
-                        <Chip
-                          label={`Crítico: ≤${deviceConfig.thresholds.low_low}N o ≥${deviceConfig.thresholds.high_high}N`}
-                          color="error"
-                          size="small"
-                          sx={{ fontWeight: 500 }}
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <Chip
-                          label="Normal: < 1500N"
-                          color="success"
-                          size="small"
-                          sx={{ fontWeight: 500 }}
-                        />
-                        <Chip
-                          label="Alerta: 1500-2000N"
-                          color="warning"
-                          size="small"
-                          sx={{ fontWeight: 500 }}
-                        />
-                        <Chip
-                          label="Crítico: > 2000N"
-                          color="error"
-                          size="small"
-                          sx={{ fontWeight: 500 }}
-                        />
-                      </>
-                    )}
+                    <Chip
+                      label="✅ Normal"
+                      color="success"
+                      size="small"
+                      sx={{ fontWeight: 500 }}
+                    />
+                    <Chip
+                      label="🚨 Alarma"
+                      color="error"
+                      size="small"
+                      sx={{ fontWeight: 500 }}
+                    />
                   </Box>
                 </Box>
               </CardContent>
             </Card>
           </Grid>
 
-          {/* Estado de Cables */}
+          {/* Estado de Sensores */}
           <Grid item xs={12} lg={6}>
             <Card
               sx={{
@@ -994,69 +637,61 @@ const RealTimeData = () => {
                   gutterBottom
                   sx={{ mb: 3, fontWeight: 600, color: "text.primary" }}
                 >
-                  Estado por Cable
+                  Estado por Sensor
                 </Typography>
                 <Grid container spacing={{ xs: 2, sm: 3 }}>
-                  {[
-                    {
-                      name: "Norte",
-                      value: currentDevice.Norte,
-                      icon: "🧭",
-                      gradient: darkMode
-                        ? "linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%)"
-                        : "linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0.02) 100%)",
-                    },
-                    {
-                      name: "Sur",
-                      value: currentDevice.Sur,
-                      icon: "🧭",
-                      gradient: darkMode
-                        ? "linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.05) 100%)"
-                        : "linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(239, 68, 68, 0.02) 100%)",
-                    },
-                    {
-                      name: "Este",
-                      value: currentDevice.Este,
-                      icon: "➡️",
-                      gradient: darkMode
-                        ? "linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.05) 100%)"
-                        : "linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(34, 197, 94, 0.02) 100%)",
-                    },
-                    {
-                      name: "Oeste",
-                      value: currentDevice.Oeste,
-                      icon: "⬅️",
-                      gradient: darkMode
-                        ? "linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.05) 100%)"
-                        : "linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0.02) 100%)",
-                    },
-                  ].map((cable) => {
-                    const status = getForceStatus(cable.value, cable.name);
-                    const alarmState = getCableAlarmState(currentDevice.id, cable.name);
-                    const average = getCableAverage(currentDevice.id, cable.name);
+                  {currentDevice.sensors.map((sensor, index) => {
+                    // Definir colores y gradientes según el índice
+                    const sensorStyles = [
+                      {
+                        icon: "🧭",
+                        gradient: darkMode
+                          ? "linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%)"
+                          : "linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0.02) 100%)",
+                      },
+                      {
+                        icon: "🧭",
+                        gradient: darkMode
+                          ? "linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.05) 100%)"
+                          : "linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(239, 68, 68, 0.02) 100%)",
+                      },
+                      {
+                        icon: "➡️",
+                        gradient: darkMode
+                          ? "linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.05) 100%)"
+                          : "linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(34, 197, 94, 0.02) 100%)",
+                      },
+                      {
+                        icon: "⬅️",
+                        gradient: darkMode
+                          ? "linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.05) 100%)"
+                          : "linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0.02) 100%)",
+                      },
+                    ];
+                    
+                    const style = sensorStyles[index] || sensorStyles[0];
+                    const sensorColor = sensor.alarm_triggered ? "#ef4444" : "#22c55e";
                     
                     return (
-                      <Grid item xs={12} sm={6} key={cable.name}>
+                      <Grid item xs={12} sm={6} key={sensor.id}>
                         <Box
                           sx={{
                             p: { xs: 2, sm: 2.5 },
-                            background: cable.gradient,
-                            border: `2px solid ${getCableColor(cable.value, cable.name)}`,
+                            background: style.gradient,
+                            border: `2px solid ${sensorColor}`,
                             borderRadius: 2,
                             transition: "all 0.3s ease",
                             "&:hover": {
                               transform: "translateY(-2px)",
-                              boxShadow: `0 8px 25px -8px ${getCableColor(
-                                cable.value, cable.name
-                              )}`,
+                              boxShadow: `0 8px 25px -8px ${sensorColor}`,
                             },
                             // Efecto de parpadeo para alarmas activas
-                            ...(alarmState.isActive && {
+                            ...(sensor.alarm_triggered && {
                               animation: 'pulse 1.5s infinite',
                               '@keyframes pulse': {
-                                '0%': { boxShadow: `0 0 5px ${getCableColor(cable.value, cable.name)}` },
-                                '50%': { boxShadow: `0 0 20px ${getCableColor(cable.value, cable.name)}` },
-                                '100%': { boxShadow: `0 0 5px ${getCableColor(cable.value, cable.name)}` },
+                                '0%': { boxShadow: `0 0 5px ${sensorColor}` },
+                                '50%': { boxShadow: `0 0 20px ${sensorColor}` },
+                                '100%': { boxShadow: `0 0 5px ${sensorColor}` },
                               },
                             }),
                           }}
@@ -1077,22 +712,22 @@ const RealTimeData = () => {
                               }}
                             >
                               <Typography sx={{ fontSize: "1.2rem" }}>
-                                {cable.icon}
+                                {style.icon}
                               </Typography>
                               <Typography
                                 variant="body2"
                                 sx={{ fontWeight: 600, color: "text.primary" }}
                               >
-                                {cable.name}
+                                {sensor.name}
                               </Typography>
                             </Box>
                             <Chip
-                              label={status.label}
-                              color={status.color}
+                              label={sensor.alarm_triggered ? "🚨 ALARMA" : "✅ Normal"}
+                              color={sensor.alarm_triggered ? "error" : "success"}
                               size="small"
                               sx={{ 
                                 fontWeight: 500,
-                                ...(status.isAlarm && {
+                                ...(sensor.alarm_triggered && {
                                   animation: 'blink 1s infinite',
                                   '@keyframes blink': {
                                     '0%, 50%': { opacity: 1 },
@@ -1106,43 +741,12 @@ const RealTimeData = () => {
                             variant="h5"
                             sx={{
                               fontWeight: 700,
-                              color: getCableColor(cable.value, cable.name),
+                              color: sensorColor,
                               fontSize: { xs: "1.25rem", sm: "1.5rem" },
                             }}
                           >
-                            {cable.value} N
+                            {sensor.value.toFixed(2)} {currentDevice.units}
                           </Typography>
-                          
-                          {/* Mostrar promedio si hay sistema de alarmas activo */}
-                          {deviceConfig?.active && average > 0 && (
-                            <Typography
-                              variant="caption"
-                              sx={{
-                                display: "block",
-                                mt: 0.5,
-                                color: "text.secondary",
-                                fontSize: "0.75rem",
-                              }}
-                            >
-                              Promedio {deviceConfig.alarm_times.time_low}s: {average.toFixed(1)} N
-                            </Typography>
-                          )}
-                          
-                          {/* Mostrar tiempo de alarma activa */}
-                          {alarmState.isActive && alarmState.startTime && (
-                            <Typography
-                              variant="caption"
-                              sx={{
-                                display: "block",
-                                mt: 0.5,
-                                color: status.color === 'error' ? 'error.main' : 'warning.main',
-                                fontSize: "0.75rem",
-                                fontWeight: 600,
-                              }}
-                            >
-                              ⏰ Alarma activa: {Math.floor((Date.now() - alarmState.startTime) / 1000)}s
-                            </Typography>
-                          )}
                         </Box>
                       </Grid>
                     );
@@ -1154,22 +758,12 @@ const RealTimeData = () => {
         </Grid>
       </Box>
 
-      {/* Diálogo de configuración de thresholds - Solo para administradores */}
-      {isAdmin && (
-        <ThresholdSettings
-          open={settingsOpen}
-          onClose={() => {
-            if (!isRequiredSetup) {
-              setSettingsOpen(false);
-            }
-            // Si es configuración obligatoria, no permitir cerrar hasta guardar
-          }}
-          deviceId={Number(deviceId)}
-          deviceConfig={deviceConfig}
-          onConfigUpdate={handleConfigUpdate}
-          isRequiredSetup={isRequiredSetup}
-        />
-      )}
+      {/* Modal de configuración de umbrales */}
+      <ThresholdSettings
+        open={openSettings}
+        onClose={handleCloseSettings}
+        deviceId={Number(deviceId)}
+      />
     </Box>
   );
 };
